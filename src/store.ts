@@ -156,6 +156,7 @@ export function requirements(dir: string, scopes: string[], filter: { scope?: st
 }
 
 export function search(dir: string, scopes: string[], pattern: string, filter: { scope?: string; topic?: string } = {}) {
+  if (filter.scope && !scopes.includes(filter.scope)) throw new Error(`scope not readable from this session: ${filter.scope}. Readable: ${scopes.join(', ')}`);
   const re = new RegExp(pattern, 'i');
   const hits = requirements(dir, scopes, filter).filter((h) => re.test(h.text));
   return { total: hits.length, hits: hits.slice(0, 20) };
@@ -163,8 +164,11 @@ export function search(dir: string, scopes: string[], pattern: string, filter: {
 
 export const usageLog = (dir: string) => join(dir, 'usage.jsonl');
 
+// metrics are best-effort: a read-only store (sandboxed Bash) must not break search/view
 export function logUsage(dir: string, event: Record<string, unknown>): void {
-  appendFileSync(usageLog(dir), JSON.stringify({ ts: new Date().toISOString(), ...event }) + '\n');
+  try {
+    appendFileSync(usageLog(dir), JSON.stringify({ ts: new Date().toISOString(), ...event }) + '\n');
+  } catch {}
 }
 
 function safePath(path: string): string {
@@ -183,7 +187,7 @@ function openChanges(dir: string, scopes: string[]): string[] {
 
 export function view(dir: string, scopes: string[], path?: string): string {
   if (!path) {
-    const specs = scopes.flatMap((s) => [`${s}/_topics.md`, ...specFiles(dir, s).map((t) => `${s}/${t}.md`)]);
+    const specs = scopes.flatMap((s) => [...(existsSync(join(dir, s, '_topics.md')) ? [`${s}/_topics.md`] : []), ...specFiles(dir, s).map((t) => `${s}/${t}.md`)]);
     const changes = openChanges(dir, scopes).map((id) => `changes/${id}/`);
     return [...specs, ...changes].join('\n');
   }
@@ -210,6 +214,8 @@ export function propose(dir: string, scopes: string[], p: Proposal): string {
   if (!/^## (ADDED|MODIFIED|REMOVED) Requirements/m.test(p.delta)) {
     throw new Error('delta must contain "## ADDED Requirements", "## MODIFIED Requirements" or "## REMOVED Requirements"');
   }
+  if (!/^### Requirement: \S/m.test(p.delta)) throw new Error('delta must contain at least one "### Requirement: <name>" block');
+  if (!p.why?.trim()) throw new Error('why must describe what happened in this session that supports the change');
   const id = `${new Date().toISOString().slice(0, 10)}-${p.topic}-${randomBytes(3).toString('hex')}`;
   const newTopic = known ? '' : `\n## New topic\n\n## ${p.newTopic!.name}\nPurpose: ${p.newTopic!.purpose}\nBoundary: ${p.newTopic!.boundary}\n`;
   return withLock(dir, 'commit', () => {

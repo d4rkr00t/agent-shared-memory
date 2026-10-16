@@ -16,7 +16,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 | File | Role |
 |---|---|
 | `src/store.ts` | store init, scope resolve, topic registry parse, index, `requirements` + grep search, view, propose, locks, `checkTopics`, `logUsage` |
-| `src/server.ts` | MCP stdio server: `search`, `view`, `propose`; logs each call to `usage.jsonl` |
+| `src/cli.ts`, `bin/agent-memory` | Bash CLI: `search`, `view`, `propose`; logs each call to `usage.jsonl`. `bin/` wrapper fixes node env for the Bash sandbox |
 | `src/hooks.ts` | `session-start` (inject index, log `session` event), `session-end` (copy transcript to `inbox/`) |
 | `src/dream.ts` | dream CLI: condense, 3 passes, archive, expire, merge |
 | `src/stats.ts` | `npm run stats`: aggregates `usage.jsonl` + `changes/` into markdown |
@@ -52,7 +52,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 
 ## Non-obvious facts
 
-- MCP server session id = env `CLAUDE_CODE_SESSION_ID` (same id hooks receive). ponytail: read once at spawn.
+- CLI session id = env `CLAUDE_CODE_SESSION_ID`, set in Claude Code's Bash tool (same id hooks receive).
 - No hash/CAS concurrency (talk's approach) — unnecessary because live writes are append-only proposals.
 - Search = regex grep, requirement-block granularity, cap 20 + total. Chosen over BM25/embeddings by user. Upgrade path: built-in `node:sqlite` FTS5 (verified on Node 24, zero deps).
 - `AGENT_MEMORY_DIR` affects only this tool; Claude Code built-in memory untouched. SessionStart tells agents: shared knowledge → `propose`, built-in memory → personal prefs only.
@@ -65,17 +65,17 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
   - `session` (SessionStart hook): `source` (startup/resume/clear/compact), `scopes`. Fires again on resume/compact → stats count unique session ids.
   - `search`: raw `pattern`, `scope?`, `topic?`, `total`, `hits` = shown hits only (≤20) as `{scope, topic, requirement}`.
   - `view`: `path` (absent = list call). `propose`: `scope`, `topic`, `id`.
-  - Tool throws → `{event: <tool>, error}` instead of extras (logged in `safe`).
+  - Tool throws → `{event: <tool>, error}` instead of extras (logged in the CLI's catch).
 - Gitignored because store `commit` runs `git add -A`. Only new stores get the ignore line (`initStore`); older stores need it added by hand, else raw patterns land in git.
-- Dream sessions don't log: hooks no-op on `AGENT_MEMORY_DREAM`, `--strict-mcp-config` keeps the MCP server out.
+- Dream sessions don't log: hooks no-op on `AGENT_MEMORY_DREAM`, dream agents get no Bash, so they can't call the CLI.
 - `npm run stats` (`src/stats.ts`): adoption, search zero-hit rate + top zero-hit patterns, per-requirement search hits + per-spec views + never-retrieved list, proposal funnel per `source`. Funnel reads `changes/` + `changes/archive/` (`Archived: accepted|rejected|expired` note), not the log.
 - Requirement identity = `scope / topic / requirement name`. Renaming a requirement resets its count. No time filter (add `--since` when log grows).
 - Not measured: whether an agent acted on the SessionStart index without calling tools.
 
 ## Environment gotchas
 
-- `node` crashes inside the Claude Code macOS sandbox (OpenSSL conf read under `/System` + keychain via `NODE_USE_SYSTEM_CA=1`). Run node/npm with sandbox off.
-- Org policy `allowManagedMcpServersOnly: true` blocks the plugin's MCP server in real Claude Code sessions. Hooks + dream work; MCP tools need org allowlisting. Don't work around the policy.
+- `node` crashes inside the Claude Code macOS sandbox (OpenSSL conf read under `/System` + keychain via `NODE_USE_SYSTEM_CA=1`), and can't spawn `git` by bare name (denied `/System/Cryptexes` PATH entry aborts libuv's PATH search). `bin/agent-memory` sets env + `PATH` for this. Run `npm test` with sandbox off.
+- Org policy `allowManagedMcpServersOnly: true` blocked the plugin's MCP server, so MCP was removed (2026-10-16): access is CLI-only via Bash, governed by Bash permissions and the sandbox.
 - `node --test` needs a glob (`'test/*.test.ts'`), not a dir.
 - Full `npm test` takes ~5 min (real git in temp stores). Run one file with `node --test test/<name>.test.ts` while iterating.
 

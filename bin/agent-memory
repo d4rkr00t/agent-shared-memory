@@ -1,0 +1,3 @@
+#!/bin/sh
+# Sandboxed Bash on macOS: system CA / openssl.cnf lookups crash node, and a denied /System PATH entry aborts spawning git
+NODE_USE_SYSTEM_CA=0 OPENSSL_CONF=/dev/null PATH="/usr/bin:/bin:$PATH" exec node "$(dirname "$0")/../src/cli.ts" "$@"

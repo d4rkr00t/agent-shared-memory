@@ -1,8 +1,6 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createServer } from '../src/server.ts';
+import { tools } from '../src/cli.ts';
 import { readFileSync } from 'node:fs';
 import { git, usageLog } from '../src/store.ts';
 import { makeRepo, makeStore, spec, topics } from './helpers.ts';
@@ -13,14 +11,15 @@ const OTHER = 'repos/github.com/acme/other';
 const usage = (store: string) =>
   readFileSync(usageLog(store), 'utf8').trim().split('\n').map((l) => { const { ts, ...e } = JSON.parse(l); return e; });
 
-async function connect(cwd: string, dir: string) {
-  const [a, b] = InMemoryTransport.createLinkedPair();
-  await createServer(cwd, dir, 'sess-1').connect(a);
-  const client = new Client({ name: 'test', version: '0' });
-  await client.connect(b);
-  return async (name: string, args: Record<string, unknown> = {}) => {
-    const r = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
-    return { text: r.content[0].text, isError: !!r.isError };
+function connect(cwd: string, dir: string) {
+  const t = tools(cwd, dir, 'sess-1');
+  return async (name: 'search' | 'view' | 'propose', args: Record<string, unknown> = {}) => {
+    try {
+      return { text: (t[name] as (a: unknown) => string)(args), isError: false };
+    } catch (e) {
+      t.log(name, { error: (e as Error).message });
+      return { text: (e as Error).message, isError: true };
+    }
   };
 }
 
@@ -108,6 +107,28 @@ describe('memory tools', () => {
     assert.equal(git(store, 'log', '-1', '--format=%s'), 'fixture');
   });
 
+  it('should reject proposal without a requirement block or why', async () => {
+    const empty = await call('propose', { scope: APP, topic: 'testing', delta: '## ADDED Requirements\n', why: 'x' });
+    const noWhy = await call('propose', { scope: APP, topic: 'testing', delta: '## ADDED Requirements\n\n### Requirement: A\nA SHALL b.', why: ' ' });
+
+    assert.match(empty.text, /at least one "### Requirement/);
+    assert.match(noWhy.text, /why must/);
+    assert.equal(git(store, 'log', '-1', '--format=%s'), 'fixture');
+  });
+
+  it('should error on search in an unreadable scope', async () => {
+    const r = await call('search', { pattern: 'test', scope: OTHER });
+
+    assert.equal(r.isError, true);
+    assert.match(r.text, /scope not readable/);
+  });
+
+  it('should not list _topics.md for scopes without one', async () => {
+    call = connect(makeRepo('git@github.com:acme/new.git'), store);
+
+    assert.doesNotMatch((await call('view')).text, /acme\/new/);
+  });
+
   it('should reject proposal for unregistered topic without new_topic', async () => {
     const delta = '## ADDED Requirements\n\n### Requirement: Deploy\nDeploys SHALL go through the pipeline.';
 
@@ -144,7 +165,7 @@ describe('memory tools', () => {
     it('should log view path and propose id', async () => {
       await call('view');
       await call('view', { path: 'org/git.md' });
-      const r = await call('propose', { scope: APP, topic: 'testing', delta: '## ADDED Requirements\n', why: 'x' });
+      const r = await call('propose', { scope: APP, topic: 'testing', delta: '## ADDED Requirements\n\n### Requirement: A\nA SHALL b.', why: 'x' });
       const id = r.text.match(/changes\/(\S+)\./)![1];
 
       assert.deepEqual(usage(store), [

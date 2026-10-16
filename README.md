@@ -10,11 +10,7 @@ Idea: Lamis Mukta, ["Learning while you sleep: Beyond memory to dreaming"](https
 
 ## Install
 
-Requires Node ≥ 24, git, Claude Code.
-
-```bash
-npm install
-```
+Requires Node ≥ 24, git, Claude Code. No runtime dependencies.
 
 Try it for one session:
 
@@ -30,11 +26,17 @@ Install for every session (inside an interactive `claude`):
 ```
 
 The plugin adds:
-- MCP server `agent-memory` with tools `search`, `view`, `propose`
-- `SessionStart` hook: injects the topic index for the session's scopes
+- `SessionStart` hook: injects the topic index for the session's scopes and the CLI commands below
 - `SessionEnd` hook: copies the transcript to the store's `inbox/`
+- CLI `bin/agent-memory` (wraps `src/cli.ts`), which agents run through the Bash tool. There is no MCP server.
 
-> Orgs with `allowManagedMcpServersOnly` must allowlist the server (`node <plugin>/src/server.ts`) for the MCP tools to load. Hooks and dreaming work without it.
+```bash
+sh <plugin>/bin/agent-memory search "deploy|release" [--scope <scope>] [--topic <topic>]
+sh <plugin>/bin/agent-memory view [path]
+sh <plugin>/bin/agent-memory propose < proposal.json   # {"scope","topic","delta","why","new_topic"?}
+```
+
+Scopes come from the current working directory. The wrapper sets `NODE_USE_SYSTEM_CA=0`, `OPENSSL_CONF=/dev/null` and puts `/usr/bin` first on `PATH`, so node runs inside the Claude Code macOS Bash sandbox. `propose` writes to the store, so sandboxed sessions need `~/.agent-memory` in `sandbox.filesystem.allowWrite`.
 
 ## Store
 
@@ -105,7 +107,7 @@ Undo a bad dream: `git -C ~/.agent-memory revert -m 1 <merge-commit>`.
 npm run stats
 ```
 
-Reads `usage.jsonl` (written by the MCP tools and the `SessionStart` hook) plus `changes/`, and prints markdown:
+Reads `usage.jsonl` (written by the CLI and the `SessionStart` hook) plus `changes/`, and prints markdown:
 - **Adoption**: sessions, sessions with at least one tool call, calls and errors per tool.
 - **Search**: zero-hit rate, average hits, top zero-hit patterns (memory gaps).
 - **Per-memory**: search hits per requirement, views per spec, never-retrieved requirements.

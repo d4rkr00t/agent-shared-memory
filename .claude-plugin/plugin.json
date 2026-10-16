@@ -1,13 +1,5 @@
 {
   "name": "agent-memory",
   "version": "0.1.0",
-  "description": "Org-wide shared agent memory: topic specs, proposals, dreaming",
-  "mcpServers": {
-    "agent-memory": {
-      "command": "node",
-      "args": [
-        "${CLAUDE_PLUGIN_ROOT}/src/server.ts"
-      ]
-    }
-  }
+  "description": "Org-wide shared agent memory: topic specs, proposals, dreaming"
 }
