@@ -40,29 +40,35 @@ describe('stats', () => {
   it('should report adoption: unique sessions, active sessions, calls per tool', () => {
     const out = stats(fixture());
 
-    assert.match(out, /Sessions: 3, active \(≥1 tool call\): 2 \(67%\), avg calls per active session: 3\.0/);
-    assert.match(out, /\| search \| 4 \| 0 \|\n\| view \| 2 \| 1 \|/);
+    assert.match(out, /sessions 3 {3}active 2 \(67%\) {3}avg calls\/active 3\.0/);
+    assert.match(out, /search\s+4\s+0\s+█+\n\s+view\s+2\s+1\s+█+\n/);
   });
 
   it('should report zero-hit rate and top zero-hit patterns', () => {
     const out = stats(fixture());
 
-    assert.match(out, /Searches: 4, zero-hit: 2 \(50%\), avg hits: 0\.8/);
-    assert.match(out, /\| `deploy\\\|ship` \| 2 \|/);
+    assert.match(out, /searches 4 {3}zero-hit 2 \(50%\) {3}avg hits 0\.8/);
+    assert.match(out, /deploy\|ship\s+2\s+█+\n/);
   });
 
   it('should count retrievals per requirement and list never-retrieved ones', () => {
     const out = stats(fixture());
 
-    assert.match(out, /\| org \/ git \/ Branch names \| 2 \|\n\| repos\/github\.com\/acme\/app \/ testing \/ Runner \| 1 \|\n\| org \/ git \/ Squash \| 0 \|/);
-    assert.match(out, new RegExp(`\\| ${APP}/testing\\.md \\| 1 \\|`));
-    assert.match(out, /Never retrieved \(1\/3\):\n- org \/ git \/ Squash\n/);
+    assert.match(out, /org \/ git \/ Branch names\s+2\s+█+\n\s+repos\/github\.com\/acme\/app \/ testing \/ Runner\s+1\s+█+\n\s+org \/ git \/ Squash\s+0\n/);
+    assert.match(out, new RegExp(`${APP}/testing\\.md\\s+1\\s+█+\n`));
+    assert.match(out, /never retrieved \(1\/3\)\n {2}org \/ git \/ Squash\n/);
   });
 
   it('should report proposal funnel per source from changes and archive', () => {
     const out = stats(fixture());
 
-    assert.match(out, /\| dream \| 0 \| 0 \| 1 \| 0 \|\n\| session \| 1 \| 1 \| 0 \| 1 \|/);
+    assert.match(out, /dream\s+0\s+0\s+1\s+0\n\s+session\s+1\s+1\s+0\s+1\n/);
+  });
+
+  it('should print "none" for empty memory sections', () => {
+    const out = stats(makeStore({ 'usage.jsonl': log({ session: 's1', event: 'session', source: 'startup' }) }));
+
+    assert.match(out, /MEMORIES\n {2}none\n\n {2}none\n\n {2}never retrieved \(0\/0\)\n {2}none\n/);
   });
 
   it('should print "no usage yet" without log', () => {

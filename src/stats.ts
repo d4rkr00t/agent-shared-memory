@@ -1,15 +1,37 @@
 #!/usr/bin/env node
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { styleText } from 'node:util';
 import { frontmatter, requirements, scopeDirs, storeDir, usageLog } from './store.ts';
 
 type Ref = { scope: string; topic: string; requirement: string };
 type Event = { session: string; event: string; error?: string; pattern?: string; total?: number; hits?: Ref[]; path?: string };
 
-const pct = (n: number, d: number) => `${d ? Math.round((100 * n) / d) : 0}%`;
+type Cell = string | number;
+type Color = 'green' | 'yellow' | 'red';
+
 const avg = (n: number, d: number) => (d ? (n / d).toFixed(1) : '0');
-const table = (head: string[], rows: (string | number)[][]) =>
-  rows.length ? [head, head.map(() => '---'), ...rows].map((r) => `| ${r.map((c) => String(c).replaceAll('|', '\\|')).join(' | ')} |`).join('\n') : '(none)';
+const rate = (n: number, d: number, color: (p: number) => Color) => {
+  const p = d ? Math.round((100 * n) / d) : 0;
+  return styleText(color(p), `${p}%`);
+};
+const section = (icon: string, title: string) => `${icon} ${styleText(['bold', 'cyan'], title)}`;
+const none = `  ${styleText('dim', 'none')}`;
+
+function table(head: string[], rows: Cell[][], bar = -1): string {
+  if (!rows.length) return none;
+  const num = head.map((_, i) => rows.every((r) => typeof r[i] === 'number'));
+  const w = head.map((h, i) => Math.max(h.length, ...rows.map((r) => String(r[i]).length)));
+  const pad = (c: Cell, i: number) => (num[i] ? String(c).padStart(w[i]) : String(c).padEnd(w[i]));
+  const max = bar < 0 ? 0 : Math.max(...rows.map((r) => +r[bar]));
+  const paint = (c: Cell, i: number) =>
+    c === 0 ? styleText('dim', pad(c, i)) : head[i] === 'errors' ? styleText('red', pad(c, i)) : pad(c, i);
+  const chart = (n: number) => (max && n ? `  ${styleText('cyan', '█'.repeat(Math.max(1, Math.round((20 * n) / max))))}` : '');
+  return [
+    `  ${head.map((h, i) => styleText('dim', pad(h, i))).join('  ')}`,
+    ...rows.map((r) => `  ${r.map(paint).join('  ')}${bar < 0 ? '' : chart(+r[bar])}`),
+  ].join('\n');
+}
 
 function counts(keys: string[]): Map<string, number> {
   const m = new Map<string, number>();
@@ -17,7 +39,7 @@ function counts(keys: string[]): Map<string, number> {
   return new Map([...m].sort((a, b) => b[1] - a[1]));
 }
 
-function proposals(dir: string): string[][] {
+function proposals(dir: string): Cell[][] {
   const changes = join(dir, 'changes');
   const list = (d: string) => (existsSync(d) ? readdirSync(d).filter((id) => existsSync(join(d, id, 'proposal.md'))) : []);
   const all = [
@@ -31,7 +53,7 @@ function proposals(dir: string): string[][] {
   const sources = [...new Set(all.map((p) => frontmatter(p.text).source ?? 'unknown'))].sort();
   return sources.map((s) => {
     const mine = all.filter((p) => (frontmatter(p.text).source ?? 'unknown') === s);
-    return [s, ...statuses.map((st) => String(mine.filter((p) => p.status === st).length))];
+    return [s, ...statuses.map((st) => mine.filter((p) => p.status === st).length)];
   });
 }
 
@@ -53,31 +75,25 @@ export function stats(dir = storeDir()): string {
   const reqs = requirements(dir, scopeDirs(dir));
   const never = reqs.filter((r) => !retrieved.has(key(r)) && !views.has(`${r.scope}/${r.topic}.md`));
 
-  return `# Adoption
+  return `${section('📈', 'ADOPTION')}
+  sessions ${sessions}   active ${active} (${rate(active, sessions, (p) => (p >= 50 ? 'green' : p >= 20 ? 'yellow' : 'red'))})   avg calls/active ${avg(calls.length, active)}
 
-Sessions: ${sessions}, active (≥1 tool call): ${active} (${pct(active, sessions)}), avg calls per active session: ${avg(calls.length, active)}
+${table(['tool', 'calls', 'errors'], tools.map((t) => [t, calls.filter((e) => e.event === t).length, calls.filter((e) => e.event === t && e.error).length]), 1)}
 
-${table(['tool', 'calls', 'errors'], tools.map((t) => [t, calls.filter((e) => e.event === t).length, calls.filter((e) => e.event === t && e.error).length]))}
+${section('🔍', 'SEARCH')}
+  searches ${searches.length}   zero-hit ${zero.length} (${rate(zero.length, searches.length, (p) => (p <= 20 ? 'green' : p <= 50 ? 'yellow' : 'red'))})   avg hits ${avg(totalHits, searches.length)}
 
-# Search
+${table(['zero-hit pattern', 'count'], [...counts(zero.map((e) => e.pattern!))].slice(0, 10), 1)}
 
-Searches: ${searches.length}, zero-hit: ${zero.length} (${pct(zero.length, searches.length)}), avg hits: ${avg(totalHits, searches.length)}
+${section('🧠', 'MEMORIES')}
+${table(['requirement', 'search hits'], reqs.map((r) => [key(r), retrieved.get(key(r)) ?? 0]).sort((a, b) => +b[1] - +a[1]), 1)}
 
-Top zero-hit patterns:
+${table(['spec', 'views'], [...views], 1)}
 
-${table(['pattern', 'count'], [...counts(zero.map((e) => e.pattern!))].slice(0, 10).map(([p, n]) => [`\`${p}\``, n]))}
+  ${styleText('dim', `never retrieved (${never.length}/${reqs.length})`)}
+${never.map((r) => `  ${key(r)}`).join('\n') || none}
 
-# Per-memory
-
-${table(['requirement', 'search hits'], reqs.map((r) => [key(r), retrieved.get(key(r)) ?? 0]).sort((a, b) => +b[1] - +a[1]))}
-
-${table(['spec', 'views'], [...views])}
-
-Never retrieved (${never.length}/${reqs.length}):
-${never.map((r) => `- ${key(r)}`).join('\n') || '(none)'}
-
-# Proposals
-
+${section('📝', 'PROPOSALS')}
 ${table(['source', 'open', 'accepted', 'rejected', 'expired'], proposals(dir))}
 `;
 }
