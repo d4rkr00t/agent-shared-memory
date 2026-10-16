@@ -1,0 +1,11 @@
+{
+  "name": "agent-memory-local",
+  "owner": { "name": "local" },
+  "plugins": [
+    {
+      "name": "agent-memory",
+      "source": "./",
+      "description": "Org-wide shared agent memory: topic specs, proposals, dreaming"
+    }
+  ]
+}
