@@ -1,22 +1,23 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { initStore, propose, resolveScope, search, storeDir, TOPIC_RULE, view } from './store.ts';
+import { initStore, logUsage, propose, resolveScope, search, storeDir, TOPIC_RULE, view } from './store.ts';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 
-function safe<A>(fn: (a: A) => string) {
-  return async (a: A) => {
-    try {
-      return text(fn(a));
-    } catch (e) {
-      return { ...text((e as Error).message), isError: true };
-    }
-  };
-}
-
 export function createServer(cwd: string, dir: string, sessionId: string): McpServer {
   initStore(dir);
+  const log = (event: string, data: object) => logUsage(dir, { session: sessionId, event, ...data });
+  const safe =
+    <A>(tool: string, fn: (a: A) => string) =>
+    async (a: A) => {
+      try {
+        return text(fn(a));
+      } catch (e) {
+        log(tool, { error: (e as Error).message });
+        return { ...text((e as Error).message), isError: true };
+      }
+    };
   const { scopes } = resolveScope(cwd);
   const server = new McpServer(
     { name: 'agent-memory', version: '0.1.0' },
@@ -30,8 +31,9 @@ export function createServer(cwd: string, dir: string, sessionId: string): McpSe
         'Search shared memory before relying on assumptions. Case-insensitive regex over specs in your readable scopes; returns whole requirement blocks with scope and topic (max 20, plus total). No hits → reword and widen with alternation, e.g. "deploy|release|ship". Hits marked ⚠ DISPUTED were contradicted by a session: verify before relying on them and report the outcome via propose.',
       inputSchema: { pattern: z.string(), scope: z.string().optional(), topic: z.string().optional() },
     },
-    safe(({ pattern, scope, topic }) => {
+    safe('search', ({ pattern, scope, topic }) => {
       const { total, hits } = search(dir, scopes, pattern, { scope, topic });
+      log('search', { pattern, scope, topic, total, hits: hits.map(({ scope, topic, requirement }) => ({ scope, topic, requirement })) });
       if (!total) return `No matches for /${pattern}/i. Reword or widen the pattern.`;
       const body = hits.map((h) => `${h.disputed ? '⚠ DISPUTED ' : ''}[${h.scope} / ${h.topic}]\n${h.text}`).join('\n\n');
       return `${total} match(es)${total > hits.length ? `, showing first ${hits.length}; narrow with scope/topic` : ''}.\n\n${body}`;
@@ -44,7 +46,11 @@ export function createServer(cwd: string, dir: string, sessionId: string): McpSe
       description: 'Without path: list topic registries, specs and open changes in your readable scopes. With path: read that file (e.g. "org/_topics.md", "repos/github.com/acme/app/testing.md", "changes/<id>/proposal.md").',
       inputSchema: { path: z.string().optional() },
     },
-    safe(({ path }) => view(dir, scopes, path)),
+    safe('view', ({ path }) => {
+      const out = view(dir, scopes, path);
+      log('view', { path });
+      return out;
+    }),
   );
 
   server.registerTool(
@@ -63,8 +69,9 @@ Check the scope's _topics.md first. "delta" uses "## ADDED Requirements", "## MO
           .describe('required only when topic is not registered yet; name must equal topic'),
       },
     },
-    safe(({ scope, topic, delta, why, new_topic }) => {
+    safe('propose', ({ scope, topic, delta, why, new_topic }) => {
       const id = propose(dir, scopes, { scope, topic, delta, why, newTopic: new_topic, sessionId });
+      log('propose', { scope, topic, id });
       return `Proposed changes/${id}. It will be considered in the next dream run.`;
     }),
   );

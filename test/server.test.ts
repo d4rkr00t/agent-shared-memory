@@ -3,11 +3,15 @@ import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createServer } from '../src/server.ts';
-import { git } from '../src/store.ts';
+import { readFileSync } from 'node:fs';
+import { git, usageLog } from '../src/store.ts';
 import { makeRepo, makeStore, spec, topics } from './helpers.ts';
 
 const APP = 'repos/github.com/acme/app';
 const OTHER = 'repos/github.com/acme/other';
+
+const usage = (store: string) =>
+  readFileSync(usageLog(store), 'utf8').trim().split('\n').map((l) => { const { ts, ...e } = JSON.parse(l); return e; });
 
 async function connect(cwd: string, dir: string) {
   const [a, b] = InMemoryTransport.createLinkedPair();
@@ -119,5 +123,49 @@ describe('memory tools', () => {
     assert.equal(rejected.isError, true);
     assert.match(rejected.text, /not registered/);
     assert.equal(accepted.isError, false);
+  });
+
+  describe('usage log', () => {
+    it('should log search with pattern, total and shown hits', async () => {
+      await call('search', { pattern: 'tests shall run|nothing-here', topic: 'testing' });
+
+      assert.deepEqual(usage(store), [
+        {
+          session: 'sess-1',
+          event: 'search',
+          pattern: 'tests shall run|nothing-here',
+          topic: 'testing',
+          total: 1,
+          hits: [{ scope: APP, topic: 'testing', requirement: 'Runner' }],
+        },
+      ]);
+    });
+
+    it('should log view path and propose id', async () => {
+      await call('view');
+      await call('view', { path: 'org/git.md' });
+      const r = await call('propose', { scope: APP, topic: 'testing', delta: '## ADDED Requirements\n', why: 'x' });
+      const id = r.text.match(/changes\/(\S+)\./)![1];
+
+      assert.deepEqual(usage(store), [
+        { session: 'sess-1', event: 'view' },
+        { session: 'sess-1', event: 'view', path: 'org/git.md' },
+        { session: 'sess-1', event: 'propose', scope: APP, topic: 'testing', id },
+      ]);
+    });
+
+    it('should log tool error message when tool throws', async () => {
+      await call('view', { path: `${OTHER}/testing.md` });
+
+      assert.deepEqual(usage(store), [{ session: 'sess-1', event: 'view', error: `not readable from this session: ${OTHER}/testing.md` }]);
+    });
+
+    it('should keep usage.jsonl out of git after propose commit', async () => {
+      await call('search', { pattern: 'x' });
+      await call('propose', { scope: APP, topic: 'testing', delta: '## ADDED Requirements\n', why: 'x' });
+
+      assert.doesNotMatch(git(store, 'ls-files'), /usage\.jsonl/);
+      assert.equal(git(store, 'status', '--porcelain'), '');
+    });
   });
 });

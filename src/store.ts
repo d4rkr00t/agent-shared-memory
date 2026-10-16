@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, matchesGlob, normalize, relative } from 'node:path';
 
@@ -75,7 +75,7 @@ export function initStore(dir = storeDir()): string {
   if (existsSync(join(dir, '.git'))) return dir;
   mkdirSync(dir, { recursive: true });
   git(dir, 'init', '-q', '-b', 'main');
-  writeFile(join(dir, '.gitignore'), 'inbox/\ndream.log\n');
+  writeFile(join(dir, '.gitignore'), 'inbox/\ndream.log\nusage.jsonl\n');
   writeFile(join(dir, 'org/_topics.md'), '# Topics\n');
   writeFile(join(dir, 'changes/.gitkeep'), '');
   commit(dir, 'init store');
@@ -142,19 +142,29 @@ export function index(dir: string, scopes: string[]): string {
   return out.join('\n');
 }
 
-export function search(dir: string, scopes: string[], pattern: string, filter: { scope?: string; topic?: string } = {}) {
-  const re = new RegExp(pattern, 'i');
+export function requirements(dir: string, scopes: string[], filter: { scope?: string; topic?: string } = {}): Hit[] {
   const hits: Hit[] = [];
   for (const scope of scopes.filter((s) => !filter.scope || s === filter.scope)) {
     for (const topic of specFiles(dir, scope).filter((t) => !filter.topic || t === filter.topic)) {
       for (const block of read(join(dir, scope, `${topic}.md`)).split(/^(?=### Requirement: )/m).slice(1)) {
-        if (!re.test(block)) continue;
         const requirement = block.match(/^### Requirement: (.*)/)![1].trim();
         hits.push({ scope, topic, requirement, disputed: /^Status:\s*disputed/im.test(block), text: block.trim() });
       }
     }
   }
+  return hits;
+}
+
+export function search(dir: string, scopes: string[], pattern: string, filter: { scope?: string; topic?: string } = {}) {
+  const re = new RegExp(pattern, 'i');
+  const hits = requirements(dir, scopes, filter).filter((h) => re.test(h.text));
   return { total: hits.length, hits: hits.slice(0, 20) };
+}
+
+export const usageLog = (dir: string) => join(dir, 'usage.jsonl');
+
+export function logUsage(dir: string, event: Record<string, unknown>): void {
+  appendFileSync(usageLog(dir), JSON.stringify({ ts: new Date().toISOString(), ...event }) + '\n');
 }
 
 function safePath(path: string): string {

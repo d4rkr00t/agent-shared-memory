@@ -8,7 +8,8 @@
   },
   "scripts": {
     "test": "node --test --test-concurrency=1 'test/*.test.ts'",
-    "dream": "node src/dream.ts"
+    "dream": "node src/dream.ts",
+    "stats": "node src/stats.ts"
   },
   "engines": {
     "node": ">=24"

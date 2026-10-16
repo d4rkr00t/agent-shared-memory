@@ -1,11 +1,12 @@
 import { copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { index, initStore, resolveScope, storeDir, TOPIC_RULE, writeFile } from './store.ts';
+import { index, initStore, logUsage, resolveScope, storeDir, TOPIC_RULE, writeFile } from './store.ts';
 
-type HookInput = { session_id: string; transcript_path?: string; cwd: string };
+type HookInput = { session_id: string; transcript_path?: string; cwd: string; source?: string };
 
 function sessionStart(input: HookInput, dir: string): string {
   const { scopes } = resolveScope(input.cwd);
+  logUsage(dir, { session: input.session_id, event: 'session', source: input.source, scopes });
   return `# Shared agent memory (mcp agent-memory)
 
 Topic index for this session (scope → topic — purpose | spec summary):

@@ -15,10 +15,11 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 
 | File | Role |
 |---|---|
-| `src/store.ts` | store init, scope resolve, topic registry parse, index, grep search, view, propose, locks, `checkTopics` |
-| `src/server.ts` | MCP stdio server: `search`, `view`, `propose` |
-| `src/hooks.ts` | `session-start` (inject index), `session-end` (copy transcript to `inbox/`) |
+| `src/store.ts` | store init, scope resolve, topic registry parse, index, `requirements` + grep search, view, propose, locks, `checkTopics`, `logUsage` |
+| `src/server.ts` | MCP stdio server: `search`, `view`, `propose`; logs each call to `usage.jsonl` |
+| `src/hooks.ts` | `session-start` (inject index, log `session` event), `session-end` (copy transcript to `inbox/`) |
 | `src/dream.ts` | dream CLI: condense, 3 passes, archive, expire, merge |
+| `src/stats.ts` | `npm run stats`: aggregates `usage.jsonl` + `changes/` into markdown |
 | `src/prompts.ts` | PROPOSE / CONVERGE / VERIFY prompts, `{{VAR}}` placeholders via `fill` |
 | `.claude-plugin/`, `hooks/hooks.json` | Claude Code plugin + local marketplace |
 | `test/*.test.ts` | integration tests: temp stores, real git, fake `claude` |
@@ -58,11 +59,25 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 - Fake `claude` in tests keys on `PASS: <name>` first line of each prompt and on `write dreams/….md` for report path. Keep both if editing prompts.
 - Proposer skips knowledge obvious from code (by prompt) — e.g. it ignored a `npm test` → `test:ci` error that self-documents.
 
+## Usage metrics
+
+- Log `<store>/usage.jsonl`, append-only, one JSON line per event: `ts`, `session`, `event` + extras.
+  - `session` (SessionStart hook): `source` (startup/resume/clear/compact), `scopes`. Fires again on resume/compact → stats count unique session ids.
+  - `search`: raw `pattern`, `scope?`, `topic?`, `total`, `hits` = shown hits only (≤20) as `{scope, topic, requirement}`.
+  - `view`: `path` (absent = list call). `propose`: `scope`, `topic`, `id`.
+  - Tool throws → `{event: <tool>, error}` instead of extras (logged in `safe`).
+- Gitignored because store `commit` runs `git add -A`. Only new stores get the ignore line (`initStore`); older stores need it added by hand, else raw patterns land in git.
+- Dream sessions don't log: hooks no-op on `AGENT_MEMORY_DREAM`, `--strict-mcp-config` keeps the MCP server out.
+- `npm run stats` (`src/stats.ts`): adoption, search zero-hit rate + top zero-hit patterns, per-requirement search hits + per-spec views + never-retrieved list, proposal funnel per `source`. Funnel reads `changes/` + `changes/archive/` (`Archived: accepted|rejected|expired` note), not the log.
+- Requirement identity = `scope / topic / requirement name`. Renaming a requirement resets its count. No time filter (add `--since` when log grows).
+- Not measured: whether an agent acted on the SessionStart index without calling tools.
+
 ## Environment gotchas
 
 - `node` crashes inside the Claude Code macOS sandbox (OpenSSL conf read under `/System` + keychain via `NODE_USE_SYSTEM_CA=1`). Run node/npm with sandbox off.
 - Org policy `allowManagedMcpServersOnly: true` blocks the plugin's MCP server in real Claude Code sessions. Hooks + dream work; MCP tools need org allowlisting. Don't work around the policy.
 - `node --test` needs a glob (`'test/*.test.ts'`), not a dir.
+- Full `npm test` takes ~5 min (real git in temp stores). Run one file with `node --test test/<name>.test.ts` while iterating.
 
 ## Smoke result (2026-10-16)
 
@@ -71,7 +86,7 @@ Two real sessions in `acme/app1` + `acme/app2` → dream merged `org/gotchas.md`
 ## Not built (add when)
 
 - Ranked search (FTS5) → grep misses/floods on real store; embeddings after.
-- Confirmation dates, decay sweep, usage log → unused memories pile up.
+- Confirmation dates, decay sweep → unused memories pile up (`npm run stats` lists never-retrieved ones).
 - Per-session proposer fan-out → inbox outgrows one context.
 - Auth, remote store, transcript redaction → leaving localhost.
 - Stale lock recovery, transcript dedupe on resumed sessions (see `ponytail:` comments).

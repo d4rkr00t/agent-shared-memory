@@ -51,6 +51,7 @@ changes/archive/                      closed proposals
 dreams/<ts>.md                        converge reports
 inbox/                                raw transcripts (gitignored)
 dream.log                             rejected runs (gitignored)
+usage.jsonl                           tool/session usage events (gitignored)
 ```
 
 ### Scopes
@@ -97,6 +98,20 @@ Only one dream runs at a time (lock). Run it nightly:
 ```
 
 Undo a bad dream: `git -C ~/.agent-memory revert -m 1 <merge-commit>`.
+
+## Metrics
+
+```bash
+npm run stats
+```
+
+Reads `usage.jsonl` (written by the MCP tools and the `SessionStart` hook) plus `changes/`, and prints markdown:
+- **Adoption**: sessions, sessions with at least one tool call, calls and errors per tool.
+- **Search**: zero-hit rate, average hits, top zero-hit patterns (memory gaps).
+- **Per-memory**: search hits per requirement, views per spec, never-retrieved requirements.
+- **Proposals**: open / accepted / rejected / expired per source (session, dream).
+
+Stores created before this feature: add `usage.jsonl` to `~/.agent-memory/.gitignore`, otherwise the log gets committed.
 
 ## Test
 

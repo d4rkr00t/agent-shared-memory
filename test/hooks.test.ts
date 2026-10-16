@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { usageLog } from '../src/store.ts';
 import { makeRepo, makeStore, spec, tmp, topics } from './helpers.ts';
 
 const APP = 'repos/github.com/acme/app';
@@ -57,5 +58,16 @@ describe('hooks', () => {
       scopes: ['org', APP],
       cwd: repo,
     });
+  });
+
+  it('should log session event with source on session start', () => {
+    const store = makeStore();
+    const repo = makeRepo('git@github.com:acme/app.git');
+
+    hook('session-start', store, { session_id: 's1', cwd: repo, source: 'resume' });
+
+    const { ts, ...event } = JSON.parse(readFileSync(usageLog(store), 'utf8'));
+    assert.match(ts, /^\d{4}-\d{2}-\d{2}T/);
+    assert.deepEqual(event, { session: 's1', event: 'session', source: 'resume', scopes: ['org', APP] });
   });
 });
