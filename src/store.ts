@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, matchesGlob, normalize, relative } from 'node:path';
 
@@ -88,15 +88,36 @@ export function commit(dir: string, message: string): void {
   git(dir, '-c', 'user.name=agent-memory', '-c', 'user.email=agent-memory@localhost', 'commit', '-q', '-m', message);
 }
 
-// ponytail: one global mkdir lock per store, no stale-lock recovery; add pid+age check if crashes leave it behind
+// Lock owner dead (crash, Ctrl-C) → stale. Lock without pid file = just created, or pre-pid lock if older than 60s.
+// ponytail: pid reuse can keep a stale lock alive; add hostname + start time if that bites
+function staleLock(lock: string): boolean {
+  try {
+    process.kill(Number(readFileSync(join(lock, 'pid'), 'utf8')), 0);
+    return false;
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === 'ESRCH') return true;
+    try {
+      return code === 'ENOENT' && Date.now() - statSync(lock).mtimeMs > 60_000;
+    } catch {
+      return false;
+    }
+  }
+}
+
 export function withLock<T>(dir: string, name: string, fn: () => T, waitMs = 10_000): T {
   const lock = join(dir, '.git', `${name}.lock`);
   const deadline = Date.now() + waitMs;
   for (;;) {
     try {
       mkdirSync(lock);
+      writeFileSync(join(lock, 'pid'), String(process.pid));
       break;
     } catch {
+      if (staleLock(lock)) {
+        rmSync(lock, { recursive: true, force: true });
+        continue;
+      }
       if (Date.now() > deadline) throw new Error(`lock busy: ${lock}`);
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
     }
@@ -104,7 +125,7 @@ export function withLock<T>(dir: string, name: string, fn: () => T, waitMs = 10_
   try {
     return fn();
   } finally {
-    rmdirSync(lock);
+    rmSync(lock, { recursive: true, force: true });
   }
 }
 

@@ -36,6 +36,7 @@ function condense(jsonl: string): string {
 }
 
 function claude(cwd: string, prompt: string, tools: string, addDir: string): string {
+  console.error(`[dream] ${new Date().toTimeString().slice(0, 8)} ${prompt.split('\n')[0].replace('PASS: ', 'pass: ')}…`);
   return execFileSync(
     process.env.AGENT_MEMORY_CLAUDE ?? 'claude',
     ['-p', prompt, '--tools', tools, '--permission-mode', 'acceptEdits', '--add-dir', addDir, '--no-session-persistence', '--strict-mcp-config'],
@@ -160,5 +161,11 @@ function run(dir: string): DreamResult {
 
 if (import.meta.main) {
   const r = dream();
-  console.log(r.status + (r.reason ? `: ${r.reason}` : ''));
+  let owner = '';
+  if (r.status === 'locked') {
+    try {
+      owner = `: another dream is running (pid ${readFileSync(join(storeDir(), '.git/dream.lock/pid'), 'utf8')})`;
+    } catch {}
+  }
+  console.log(r.status + (r.reason ? `: ${r.reason}` : owner));
 }

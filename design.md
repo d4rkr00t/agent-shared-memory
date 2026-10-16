@@ -50,7 +50,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 
 ## Dream pipeline invariants
 
-1. One dream at a time: mkdir lock `.git/dream.lock`. Live commits use `.git/commit.lock`.
+1. One dream at a time: mkdir lock `.git/dream.lock` holding a `pid` file. Live commits use `.git/commit.lock`. A lock whose pid is dead, or a lock with no pid older than 60s, is stale and reclaimed (Ctrl-C or a crash used to strand it forever). `npm run dream` prints `locked: another dream is running (pid N)` while one runs.
 2. Pass 1 runs in worktree `dream/<ts>`, its commit is merged into `main` **immediately**, inbox → `inbox/processed/`. Rejected runs therefore never lose proposals.
 3. Converge edits specs/registries only. It writes decision lines `- ACCEPT|REJECT|PENDING changes/<id>` in `dreams/<ts>.md`; **the script** archives changes from those lines. No lines → run rejected.
 4. Agents can't delete files (no Bash). Empty spec file = delete; script removes them.
@@ -58,7 +58,8 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 6. Verify last line must be exactly `APPROVE` (markdown `*`/`` ` `` stripped). Anything else = reject → `dream.log`.
 7. `runs` bump + expiry (≥3) happens on `main` after merge/reject, so it counts rejected runs too.
 8. Final merge can't conflict: live sessions only add new `changes/<id>/` dirs.
-9. Dream `claude -p` calls: `--tools` whitelist, `acceptEdits`, `--no-session-persistence`, `--strict-mcp-config`, env `AGENT_MEMORY_DREAM=1` → hooks no-op (else dream transcripts feed inbox = loop).
+9. Each `claude -p` pass logs `[dream] HH:MM:SS pass: <name>…` to stderr. Passes take minutes; no output between them is normal.
+10. Dream `claude -p` calls: `--tools` whitelist, `acceptEdits`, `--no-session-persistence`, `--strict-mcp-config`, env `AGENT_MEMORY_DREAM=1` → hooks no-op (else dream transcripts feed inbox = loop).
 
 ## Non-obvious facts
 
@@ -101,4 +102,5 @@ Two real sessions in `acme/app1` + `acme/app2` → dream merged `org/gotchas.md`
 - Confirmation dates, decay sweep → unused memories pile up (`npm run stats` lists never-retrieved ones).
 - Per-session proposer fan-out → inbox outgrows one context.
 - Auth, remote store, transcript redaction → leaving localhost.
-- Stale lock recovery, transcript dedupe on resumed sessions (see `ponytail:` comments).
+- Transcript dedupe on resumed sessions; lock pid-reuse guard (see `ponytail:` comments).
+- Transcripts only reach `inbox/` on `SessionEnd`, so long-open desktop sessions never feed dreams. Pull from `~/.claude/projects/` when that matters.

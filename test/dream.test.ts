@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { dream } from '../src/dream.ts';
 import { git, writeFile } from '../src/store.ts';
@@ -122,5 +122,24 @@ write('changes/c-1/proposal.md', ${JSON.stringify(PROPOSAL())});`,
 
     assert.deepEqual(dream(store), { status: 'locked' });
     assert.deepEqual(calls(bin), []);
+  });
+
+  it('should exit when lock owner is alive, reclaim lock of dead owner or pre-pid lock older than 60s', () => {
+    const store = makeStore();
+    fakeClaude({});
+    const lock = join(store, '.git/dream.lock');
+
+    mkdirSync(lock);
+    writeFileSync(join(lock, 'pid'), String(process.pid));
+    assert.deepEqual(dream(store), { status: 'locked' });
+
+    writeFileSync(join(lock, 'pid'), '999999');
+    assert.equal(dream(store).status, 'empty');
+    assert.equal(existsSync(lock), false);
+
+    mkdirSync(lock);
+    const old = new Date(Date.now() - 120_000);
+    utimesSync(lock, old, old);
+    assert.equal(dream(store).status, 'empty');
   });
 });
