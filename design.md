@@ -9,7 +9,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 - **Memory = spec.** One file per topic per scope, `### Requirement:` blocks (SHALL/SHOULD + `Evidence:` session ids).
 - **Live sessions never write specs.** Read via `search`/`view`, write only `propose` → new `changes/<id>/`.
 - **Only the dream pipeline changes specs**: propose → converge → verify, auto-merge, no human. Safety net = verify + `git revert`.
-- **Topic structure is the #1 rule** (user requirement). Stated as "EXTREMELY IMPORTANT" in `TOPIC_RULE` (`src/store.ts`), reused by every prompt, tool description and SessionStart text. Keep it that way.
+- **Topic structure is the #1 rule** (user requirement). Stated as "EXTREMELY IMPORTANT" in `TOPIC_RULE` (`src/store.ts`), reused by every dream prompt and the SessionStart text. Keep it that way.
 
 ## Files
 
@@ -21,8 +21,18 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 | `src/dream.ts` | dream CLI: condense, 3 passes, archive, expire, merge |
 | `src/stats.ts` | `npm run stats`: aggregates `usage.jsonl` + `changes/` into markdown |
 | `src/prompts.ts` | PROPOSE / CONVERGE / VERIFY prompts, `{{VAR}}` placeholders via `fill` |
-| `.claude-plugin/`, `hooks/hooks.json` | Claude Code plugin + local marketplace |
-| `test/*.test.ts` | integration tests: temp stores, real git, fake `claude` |
+| `.claude-plugin/`, `hooks/hooks.json` | Claude Code plugin (hooks only, no MCP) + local marketplace |
+| `test/*.test.ts` | integration tests: temp stores, real git, fake `claude`. `tools.test.ts` calls `tools()` directly, `cli.test.ts` spawns the CLI |
+
+## CLI
+
+- `sh <plugin>/bin/agent-memory search|view|propose`; `propose` takes JSON on stdin. The SessionStart text is the only place agents learn the commands, with absolute paths baked in from `import.meta.dirname`.
+- Scopes come from the Bash cwd (`resolveScope(process.cwd())`).
+- Handlers live in `tools()` in `src/cli.ts`: they return a string or throw. The CLI prints errors to stderr: exit 1 for a tool error, exit 2 for usage or unknown flags. `--help` prints usage.
+- `propose` rejects: unreadable scope, non-kebab topic, unregistered topic without matching `new_topic`, delta without an `## ADDED|MODIFIED|REMOVED Requirements` section or without a `### Requirement: <name>` block, empty `why`.
+- `search --scope` outside the readable scopes errors instead of returning "No matches". `view` (list) only shows `_topics.md` files that exist.
+- `logUsage` swallows write errors, so search and view still work on a read-only store. `propose` needs a writable store.
+- Zero runtime deps (stdlib `parseArgs`); the plugin zip needs no `node_modules`.
 
 ## Scopes
 
@@ -70,12 +80,14 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 - Dream sessions don't log: hooks no-op on `AGENT_MEMORY_DREAM`, dream agents get no Bash, so they can't call the CLI.
 - `npm run stats` (`src/stats.ts`): adoption, search zero-hit rate + top zero-hit patterns, per-requirement search hits + per-spec views + never-retrieved list, proposal funnel per `source`. Funnel reads `changes/` + `changes/archive/` (`Archived: accepted|rejected|expired` note), not the log.
 - Requirement identity = `scope / topic / requirement name`. Renaming a requirement resets its count. No time filter (add `--since` when log grows).
-- Not measured: whether an agent acted on the SessionStart index without calling tools.
+- Not measured: whether an agent acted on the SessionStart index without running the CLI.
 
 ## Environment gotchas
 
 - `node` crashes inside the Claude Code macOS sandbox (OpenSSL conf read under `/System` + keychain via `NODE_USE_SYSTEM_CA=1`), and can't spawn `git` by bare name (denied `/System/Cryptexes` PATH entry aborts libuv's PATH search). `bin/agent-memory` sets env + `PATH` for this. Run `npm test` with sandbox off.
 - Org policy `allowManagedMcpServersOnly: true` blocked the plugin's MCP server, so MCP was removed (2026-10-16): access is CLI-only via Bash, governed by Bash permissions and the sandbox.
+- Sandboxed Bash can't write `~/.agent-memory` by default: `propose` fails with EPERM until the user adds it to `sandbox.filesystem.allowWrite`.
+- Org `strictKnownMarketplaces` blocks `claude plugin marketplace add <dir>`. Install = upload a zip in the desktop app; the zip must contain `.claude-plugin/`, `hooks/`, `src/`, `bin/`, `package.json` (a manifest-only zip installs a plugin that does nothing). `/plugin` dialogs don't work in the desktop Code tab; use `claude plugin …` in a terminal.
 - `node --test` needs a glob (`'test/*.test.ts'`), not a dir.
 - Full `npm test` takes ~5 min (real git in temp stores). Run one file with `node --test test/<name>.test.ts` while iterating.
 
