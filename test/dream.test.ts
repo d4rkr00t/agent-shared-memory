@@ -42,7 +42,7 @@ write(report, '- ACCEPT changes/' + id + ' -> ${APP}\\n');`;
 function storeWithInbox() {
   const store = makeStore();
   writeFile(join(store, 'inbox/s1.jsonl'), JSON.stringify({ type: 'user', message: { content: 'use npm test' } }) + '\n');
-  writeFile(join(store, 'inbox/s1.json'), JSON.stringify({ session_id: 's1', repo: APP, scope: APP, cwd: '/x' }));
+  writeFile(join(store, 'inbox/s1.json'), JSON.stringify({ session_id: 's1', user: 'u1', repo: APP, scope: APP, cwd: '/x' }));
   return store;
 }
 
@@ -51,7 +51,8 @@ describe('dream', () => {
     const store = storeWithInbox();
     fakeClaude({
       propose: `const sessions = process.argv[process.argv.indexOf('--add-dir') + 1];
-if (!fs.readFileSync(path.join(sessions, 's1.md'), 'utf8').includes('USER: use npm test')) process.exit(1);
+const s1 = fs.readFileSync(path.join(sessions, 's1.md'), 'utf8');
+if (!s1.includes('user: u1') || !s1.includes('USER: use npm test')) process.exit(1);
 write('changes/c-1/proposal.md', ${JSON.stringify(PROPOSAL())});`,
       converge: `write(report, '- PENDING changes/c-1\\n');`,
       verify: `console.log('REJECT: nothing to merge');`,
@@ -87,7 +88,7 @@ write('changes/c-1/proposal.md', ${JSON.stringify(PROPOSAL())});`,
 
     assert.deepEqual(r, { status: 'rejected', reason: 'REJECT: evidence from one session only' });
     assert.equal(existsSync(join(store, APP, 'testing.md')), false);
-    assert.match(readFileSync(join(store, 'changes/c-1/proposal.md'), 'utf8'), /runs: 1/);
+    assert.match(readFileSync(join(store, 'changes/c-1/proposal.md'), 'utf8'), /runs: 1[\s\S]*Verify-rejected \d{4}-\d{2}-\d{2}: REJECT: evidence from one session only/);
     assert.match(readFileSync(join(store, 'dream.log'), 'utf8'), /REJECT: evidence from one session only/);
   });
 

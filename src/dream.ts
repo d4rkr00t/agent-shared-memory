@@ -112,7 +112,7 @@ function run(dir: string): DreamResult {
     const meta = JSON.parse(readFileSync(join(inbox, m), 'utf8'));
     const jsonl = join(inbox, `${meta.session_id}.jsonl`);
     const body = existsSync(jsonl) ? condense(readFileSync(jsonl, 'utf8')) : '';
-    writeFile(join(sessions, `${meta.session_id}.md`), `# Session ${meta.session_id}\nrepo: ${meta.repo}\nscope: ${meta.scope}\ncwd: ${meta.cwd}\n\n${body}\n`);
+    writeFile(join(sessions, `${meta.session_id}.md`), `# Session ${meta.session_id}\nuser: ${meta.user ?? 'unknown'}\nrepo: ${meta.repo}\nscope: ${meta.scope}\ncwd: ${meta.cwd}\n\n${body}\n`);
   }
 
   git(dir, 'worktree', 'add', '-q', '-b', branch, tree, 'main');
@@ -148,6 +148,7 @@ function run(dir: string): DreamResult {
     const approved = verdict === 'APPROVE';
     withLock(dir, 'commit', () => {
       if (approved) merge(dir, branch, `dream ${ts}: converge`);
+      else for (const id of openChanges(dir)) appendFileSync(join(dir, 'changes', id, 'proposal.md'), `\nVerify-rejected ${ts.slice(0, 10)}: ${verdict}\n`);
       bumpRuns(dir);
     });
     if (approved) return { status: 'merged' };

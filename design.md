@@ -42,11 +42,15 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 
 ## Level rules (converge, hard)
 
-- evidence ≥2 repos → `org/`
+- counted per requirement (its own `Evidence:` line, not the change's `sessions:`)
+- evidence ≥2 repos → `org/` (`repo: null` sessions don't count)
 - evidence ≥2 subfolders of one repo → repo root
 - else deepest shared scope
-- 1 session → PENDING
-- contradiction: 1 session → `Status: disputed` + `Disputed-by`; ≥2 → rewrite/remove
+- 1 session → ACCEPT only on strong evidence (TOOL ERROR → fix, or user correction about repo/tooling/env backed by a fact in the transcript); else PENDING
+- taste convention with no observed failure → needs ≥2 distinct `user` hashes, else REJECT as personal
+- deeper scope overrides shallower (`Overrides:` line)
+- contradiction: 1 session → `Status: disputed` + `Disputed-by`; ≥2 → rewrite/remove; later confirmation clears dispute
+- confirmation = `MODIFIED` with unchanged text + new evidence
 
 ## Dream pipeline invariants
 
@@ -56,7 +60,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 4. Agents can't delete files (no Bash). Empty spec file = delete; script removes them.
 5. `checkTopics` (mechanical) runs before verify; failure rejects without calling verify.
 6. Verify last line must be exactly `APPROVE` (markdown `*`/`` ` `` stripped). Anything else = reject → `dream.log`.
-7. `runs` bump + expiry (≥3) happens on `main` after merge/reject, so it counts rejected runs too.
+7. `runs` bump + expiry (≥3) happens on `main` after merge/reject, so it counts rejected runs too. On reject, every open `proposal.md` first gets `Verify-rejected <date>: <verdict>` so the next converge sees why (otherwise it repeats the same mistake until expiry).
 8. Final merge can't conflict: live sessions only add new `changes/<id>/` dirs.
 9. Each `claude -p` pass logs `[dream] HH:MM:SS pass: <name>…` to stderr. Passes take minutes; no output between them is normal.
 10. Dream `claude -p` calls: `--tools` whitelist, `acceptEdits`, `--no-session-persistence`, `--strict-mcp-config`, env `AGENT_MEMORY_DREAM=1` → hooks no-op (else dream transcripts feed inbox = loop).
@@ -67,6 +71,8 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 - No hash/CAS concurrency (talk's approach) — unnecessary because live writes are append-only proposals.
 - Search = regex grep, requirement-block granularity, cap 20 + total. Chosen over BM25/embeddings by user. Upgrade path: built-in `node:sqlite` FTS5 (verified on Node 24, zero deps).
 - `AGENT_MEMORY_DIR` affects only this tool; Claude Code built-in memory untouched. SessionStart tells agents: shared knowledge → `propose`, built-in memory → personal prefs only.
+- Inbox meta + session header carry `user` = first 12 hex of sha256(`git config user.email`, fallback OS username). Lets dreams count distinct users (personal vs shared) without storing identity. Pre-existing inbox entries show `user: unknown`, which never counts.
+- Prompt quality rules live in one `QUALITY` block in `src/prompts.ts` (atomic, trigger/action/consequence, grounded clauses, evidence strength, shared-vs-personal, never-store list) shared by all 3 passes. Dream passes can't read repos (`NO_REPO`): "obvious from code" is judged from transcripts only.
 - Fake `claude` in tests keys on `PASS: <name>` first line of each prompt and on `write dreams/….md` for report path. Keep both if editing prompts.
 - Proposer skips knowledge obvious from code (by prompt) — e.g. it ignored a `npm test` → `test:ci` error that self-documents.
 

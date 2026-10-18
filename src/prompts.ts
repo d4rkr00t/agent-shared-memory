@@ -18,21 +18,42 @@ ${TOPIC_RULE}
 - Prefer a few broad, well-bounded topics (testing, build, deploy, git, code-style, architecture, gotchas) over many tiny ones. Never create a topic for a single requirement unless no boundary can fit it.
 - Before adding anything, read the scope's _topics.md and pick the topic by its Boundary line, not by its name.`;
 
+const QUALITY = `## Memory quality (hard; a bad memory misleads every future agent)
+A requirement is one rule an agent can act on at a decision point:
+- Atomic: one rule per "### Requirement" block. Split bundled facts into separate blocks.
+- Shape: "When <trigger>, <who> SHALL|SHOULD <concrete action: command, path, name>; otherwise <observed consequence>."
+- SHALL only when breaking the rule was observed to fail (error, broken build, failed CI). SHOULD for conventions.
+- Name: short imperative phrase, stable, unique in its scope. It is the identity for MODIFIED/REMOVED and usage stats.
+- Grounded: every clause traces to a quoted transcript line. Drop clauses no session shows, even if you believe them.
+- Evidence strength: user correction > TOOL ERROR followed by a different command that worked > anything else. The assistant's own claims, plans or summaries are not evidence.
+- Shared, not personal: rules about the repo, tooling, CI or environment can be shared. Rules about how the agent talks, formats, plans or works with a user (tone, verbosity, workflow habits) are personal preferences: REJECT them, they belong in that user's built-in memory.
+- Never store: secrets, credentials, tokens, personal data, one-off task details, transient failures (network, flaky runs), typos, machine-specific paths (write ~ instead of /Users/<name>), anything obvious from reading the code, anything from the repo's CLAUDE.md or AGENTS.md (already loaded in every session). Other repo docs only when a transcript shows an agent missed them; then point to the doc path instead of copying it.
+
+Good:
+### Requirement: Run npm test with the Bash sandbox off
+When running \`npm test\` in this repo, agents SHALL disable the Bash sandbox; otherwise node aborts with "OpenSSL configuration error".
+Evidence: s1, s2
+
+Bad (bundles four facts, no trigger, last clause seen in no session):
+### Requirement: Plugin notes
+Plugins install by zip, need bin/ and src/, /plugin dialogs fail in the desktop app, and git fails under /System/Cryptexes.`;
+
 const SPEC = `## Spec format
 <scope>/<topic>.md:
 ---
 topic: <topic, must equal the file name>
-description: <one line summary of what the spec says, used in session indexes>
+description: <one line listing the concrete triggers covered (commands, tools, error strings); shown in every session's index so agents know when to search>
 updated: <YYYY-MM-DD>
 ---
 
-### Requirement: <short name>
-<One or two sentences with SHALL (must) or SHOULD (recommended). Concrete: commands, paths, names.>
+### Requirement: <name>
+<statement, see Memory quality>
+[Overrides: <shallower scope>/<topic>: <requirement name>]
 Evidence: <comma-separated session ids>
 [Status: disputed
 Disputed-by: <session ids>]
 
-Delta format (inside changes/<id>/<scope>/<topic>.md):
+Delta format (inside changes/<id>/<scope>/<topic>.md). Every block carries its own "Evidence:" line; a block without one takes the proposal's "sessions:".
 ## ADDED Requirements
 ### Requirement: ...
 ## MODIFIED Requirements
@@ -40,32 +61,47 @@ Delta format (inside changes/<id>/<scope>/<topic>.md):
 <full new text>
 ## REMOVED Requirements
 ### Requirement: <exact existing name>
-<reason>`;
+<reason>
+A confirmation (a session followed the requirement and it worked) is MODIFIED with the unchanged text and the new session ids added to Evidence.`;
 
 const LEVELS = `## Level rules (hard; cite them for every accepted change)
-- Evidence from sessions in 2 or more different repos → org/
+Count only the sessions in a requirement's own Evidence line.
+- Evidence from sessions in 2 or more different repos → org/. Sessions with "repo: null" never count as a repo.
 - Evidence from 2 or more different subfolder scopes of one repo → that repo's root scope
 - Otherwise → the deepest scope shared by all evidence sessions
-- Evidence from only 1 session → PENDING (wait for more evidence), except contradictions (below)
+- Evidence from only 1 session → ACCEPT at that session's scope only if the evidence is strong: a TOOL ERROR followed by a fix that worked, or a user correction about the repo, tooling, CI or environment with a fact behind it in the transcript (an error, a config file, a command output). Otherwise PENDING. Contradictions: see below.
+- A convention with no observed failure behind it (style, naming, structure) needs corrections from 2 or more distinct users (session header "user:"; "unknown" never counts). One user's taste → REJECT as personal preference.
+- Conflict between scopes: the deeper scope wins; mark its requirement "Overrides: <shallower scope>/<topic>: <name>".
 - New evidence can widen or narrow an existing requirement's reach: promote it to a higher scope or demote it to a lower one (remove it from the old spec, add it to the new one)`;
 
 const CONTRADICTIONS = `## Contradictions (staleness)
 A contradiction is a session that followed an existing requirement and it failed: an error, the user correcting the agent, or a retry loop caused by the requirement.
 - 1 contradicting session → ACCEPT as: keep the requirement, add "Status: disputed" and "Disputed-by: <session id>"
-- 2 or more distinct contradicting sessions → ACCEPT as: rewrite the requirement to what actually worked, or remove it`;
+- 2 or more distinct contradicting sessions → ACCEPT as: rewrite the requirement to what actually worked, or remove it
+- A confirmation of a disputed requirement from a session not in Disputed-by → remove "Status: disputed" and "Disputed-by"`;
 
-const NEVER = `Never store secrets, credentials, tokens, personal data, or one-off task details. Never store what is obvious from reading the code.`;
+const NO_REPO = `The repo's code and docs are NOT available to you. Judge "obvious from reading the code" only from the transcripts: an agent that read the file and then succeeded on the first try means obvious.`;
 
 export const PROPOSE = `PASS: propose
 You are pass 1 (PROPOSE) of a memory consolidation ("dreaming") pipeline for coding agents across an organisation.
 
 ${LAYOUT}
 
-Input: condensed transcripts of recent agent sessions in {{SESSIONS}}/*.md. Each starts with the session id, repo and scope it ran in. Lines are USER:, ASSISTANT:, TOOL <name>:, TOOL ERROR:.
+Input: condensed transcripts of recent agent sessions in {{SESSIONS}}/*.md. Each starts with the session id, user (hashed), repo and scope it ran in. Lines are USER:, ASSISTANT:, TOOL <name>:, TOOL ERROR:. Successful tool output is omitted: a call that succeeded shows as a TOOL line with no TOOL ERROR after it.
+Before writing anything, read _topics.md and every spec of each scope these sessions ran in, and the open changes in changes/.
 
-Task: read ALL transcripts together and find knowledge that future agents need and do not have yet. Look for patterns ACROSS sessions first: the same mistake made repeatedly, the same user correction, the same command or workaround discovered, conventions users enforce, existing requirements that turned out wrong (contradictions). Single-session findings are allowed, but cite exactly what happened.
+Task: read ALL transcripts together and find knowledge that future agents need and do not have yet. Look for patterns ACROSS sessions first. Signals, strongest first:
+- user corrections ("no, use X", "don't do Y")
+- a TOOL ERROR followed by a different command that worked
+- the same mistake or retry loop in several sessions
+- explicit user instructions to always or never do something (apply the shared-vs-personal test)
+- an existing requirement that was followed and failed (contradiction)
+- an existing requirement that was followed and worked (confirmation; this is how requirements get promoted)
+Single-session findings are allowed, but cite exactly what happened.
 
 ${TOPICS}
+
+${QUALITY}
 
 ${SPEC}
 
@@ -73,7 +109,7 @@ ${CONTRADICTIONS}
 
 ## What to write
 Do NOT edit specs or _topics.md. Only create or extend changes:
-- If an open change in changes/ already proposes the same thing, extend it: append your session ids to its "sessions:" line and add the new evidence to its body. Do not create a duplicate.
+- If an open change in changes/ already proposes the same thing, extend it: append your session ids to its "sessions:" line, to the matching requirement's "Evidence:" line in the delta, and add the quotes under its "Evidence for" list. Do not create a duplicate.
 - Otherwise create changes/<YYYY-MM-DD>-<topic>-<slug>/ ({{DATE}} is today) with:
   1. proposal.md:
      ---
@@ -83,7 +119,9 @@ Do NOT edit specs or _topics.md. Only create or extend changes:
      sessions: <comma-separated session ids>
      runs: 0
      ---
-     <why: per session, one line on what happened, with a short quote>
+     Evidence per requirement; later passes see older sessions ONLY through these quotes:
+     Evidence for "<requirement name>":
+     - <session id>: <one line on what happened> — "<verbatim quote of the correction, error or command>"
      If the topic is not registered in that scope yet, add:
      ## New topic
      ## <name>
@@ -91,7 +129,6 @@ Do NOT edit specs or _topics.md. Only create or extend changes:
      Boundary: Covers ..., not ...
   2. <scope>/<topic>.md delta file inside the change folder.
 - One change per (scope, topic). Group related requirements for the same topic into one change.
-${NEVER}
 If nothing is worth proposing, write nothing.`;
 
 export const CONVERGE = `PASS: converge
@@ -102,10 +139,14 @@ ${LAYOUT}
 Input: every open change in changes/*/ (ignore changes/archive/), all specs and registries, and this run's condensed transcripts in {{SESSIONS}} (older evidence is quoted inside each proposal.md).
 
 Task: decide every open change, apply the accepted ones to the specs, and keep the topic structure clean.
+Lines "Verify-rejected <date>: <reason>" in a proposal.md record an earlier run that the verify pass rejected while this change was open. Fix their cause; never write the same result again.
 
 ${TOPICS}
 - You own the registries: add, merge, split and rename topics so each scope stays non-overlapping and well-bounded. Every spec file needs a registry entry and every registry entry needs a spec file.
 - To delete a file (e.g. after merging two topics), overwrite it with empty content; the pipeline removes empty files.
+
+${QUALITY}
+${NO_REPO}
 
 ${LEVELS}
 
@@ -118,8 +159,8 @@ ${SPEC}
 - ADDED → add the requirement to <level scope>/<topic>.md (create the spec + registry entry if needed). MODIFIED → replace the block. REMOVED → delete the block.
 - Merge Evidence ids, set "updated: {{DATE}}", keep "description" accurate.
 - If an equivalent requirement exists already, add the evidence ids to it instead of duplicating.
-- REJECT changes that are wrong, one-off, obvious from code, or contain secrets/personal data.
-${NEVER}
+- Rewrite accepted requirements to meet Memory quality; drop clauses the quoted evidence does not show.
+- REJECT changes that are wrong, personal preferences, or fail Memory quality and cannot be fixed by rewriting.
 Do NOT edit or move anything under changes/; the pipeline archives changes from your report.
 
 ## Report (required): write {{REPORT}}
@@ -144,14 +185,17 @@ Check every spec change:
 ${TOPICS}
 - Reject: a spec without a registry entry, content outside its topic's Boundary, two overlapping topics in one scope, near-miss placement.
 
+${QUALITY}
+- Reject: any requirement that fails Memory quality.
+${NO_REPO}
+
 ${LEVELS}
 
 ${CONTRADICTIONS}
 
 Also check:
-- The cited evidence actually supports the requirement (read the transcripts / proposals).
-- It does not contradict another spec without resolving the conflict.
-- ${NEVER}
+- Every clause of every changed requirement is supported by its own Evidence sessions (read the transcripts / quotes in proposals).
+- It does not contradict another spec without resolving the conflict ("Overrides:" for a deeper scope).
 
 Output a short list of findings, then the LAST line must be exactly "APPROVE" or "REJECT: <one-line reason>". Any failing change rejects the whole run.`;
 

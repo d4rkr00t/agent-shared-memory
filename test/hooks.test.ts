@@ -51,7 +51,9 @@ describe('hooks', () => {
     hook('session-end', store, { session_id: 's1', cwd: repo, transcript_path: transcript });
 
     assert.equal(readFileSync(join(store, 'inbox/s1.jsonl'), 'utf8'), '{"type":"user"}\n');
-    assert.deepEqual(JSON.parse(readFileSync(join(store, 'inbox/s1.json'), 'utf8')), {
+    const { user, ...meta } = JSON.parse(readFileSync(join(store, 'inbox/s1.json'), 'utf8'));
+    assert.match(user, /^[0-9a-f]{12}$/);
+    assert.deepEqual(meta, {
       session_id: 's1',
       repo: APP,
       scope: APP,

@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { userInfo } from 'node:os';
 import { join } from 'node:path';
-import { index, initStore, logUsage, resolveScope, storeDir, TOPIC_RULE, writeFile } from './store.ts';
+import { git, index, initStore, logUsage, resolveScope, storeDir, TOPIC_RULE, writeFile } from './store.ts';
 
 type HookInput = { session_id: string; transcript_path?: string; cwd: string; source?: string };
 
@@ -26,7 +28,23 @@ Shared memory is accessed ONLY through this CLI, run with the Bash tool from the
 
 Search before relying on assumptions about this codebase or org conventions, then view for full specs. No hits → reword and widen with alternation, e.g. "deploy|release|ship". Hits marked ⚠ DISPUTED must be verified before relying on them; report the outcome via propose.
 ${TOPIC_RULE}
-Record shared project/org knowledge (conventions, gotchas, commands, corrections) with propose. Check the scope's _topics.md first. Delta sections: "## ADDED Requirements", "## MODIFIED Requirements" or "## REMOVED Requirements", each with "### Requirement: <name>" blocks. If a memory was wrong (you followed it and it failed), propose MODIFIED or REMOVED and explain in "why". Specs are never edited directly; a nightly dream pass consolidates proposals. Use Claude Code's built-in memory only for personal user preferences.`;
+Record shared project/org knowledge (conventions, gotchas, commands, corrections) with propose: only what this session discovered through a failure or a user correction, never what you just read in repo docs. Check the scope's _topics.md first.
+- scope: the deepest scope where you observed it; the dream promotes it later.
+- One rule per "### Requirement" block: "When <trigger>, SHALL|SHOULD <concrete command/path>; otherwise <what failed>."
+- why: for each requirement, quote the error or the user's words verbatim.
+- You followed a memory and it worked → propose MODIFIED with the unchanged text (a confirmation).
+Delta sections: "## ADDED Requirements", "## MODIFIED Requirements" or "## REMOVED Requirements", each with "### Requirement: <name>" blocks. If a memory was wrong (you followed it and it failed), propose MODIFIED or REMOVED and explain in "why". Specs are never edited directly; a nightly dream pass consolidates proposals. Use Claude Code's built-in memory only for personal user preferences (how you talk, format, plan or work with this user).`;
+}
+
+// hashed so dreams can count distinct users without storing who they are
+function userHash(cwd: string): string {
+  let id: string;
+  try {
+    id = git(cwd, 'config', 'user.email');
+  } catch {
+    id = userInfo().username;
+  }
+  return createHash('sha256').update(id).digest('hex').slice(0, 12);
 }
 
 // ponytail: resumed sessions re-copy the full transcript; dedupe by message uuid if dreams double-count
@@ -34,7 +52,7 @@ function sessionEnd(input: HookInput, dir: string): void {
   if (!input.transcript_path || !existsSync(input.transcript_path)) return;
   const { repo, scopes } = resolveScope(input.cwd);
   copyFileSync(input.transcript_path, join(dir, 'inbox', `${input.session_id}.jsonl`));
-  const meta = { session_id: input.session_id, repo, scope: scopes.at(-1), scopes, cwd: input.cwd };
+  const meta = { session_id: input.session_id, user: userHash(input.cwd), repo, scope: scopes.at(-1), scopes, cwd: input.cwd };
   writeFile(join(dir, 'inbox', `${input.session_id}.json`), JSON.stringify(meta, null, 2));
 }
 
