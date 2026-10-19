@@ -35,14 +35,17 @@ export function normalizeRemote(url: string): string {
 
 export function resolveScope(cwd: string): Scope {
   const root = tryGit(cwd, 'rev-parse', '--show-toplevel');
-  if (!root) return { repo: null, scopes: ['org'] };
-  const remote = tryGit(root, 'remote', 'get-url', 'origin');
-  const repo = `repos/${remote ? normalizeRemote(remote) : `local/${basename(root)}`}`;
-  const scopes = ['org', repo];
-
+  if (!root) return scopeOf(null, null, [], '');
   const configPath = join(root, '.agent-memory.json');
   const globs: string[] = existsSync(configPath) ? (JSON.parse(readFileSync(configPath, 'utf8')).scopes ?? []) : [];
-  const segs = relative(root, realpathSync(cwd)).split('/').filter(Boolean);
+  return scopeOf(root, tryGit(root, 'remote', 'get-url', 'origin'), globs, relative(root, realpathSync(cwd)));
+}
+
+export function scopeOf(root: string | null, remote: string | null, globs: string[], rel: string): Scope {
+  if (!root) return { repo: null, scopes: ['org'] };
+  const repo = `repos/${remote ? normalizeRemote(remote) : `local/${basename(root)}`}`;
+  const scopes = ['org', repo];
+  const segs = rel.split('/').filter(Boolean);
   for (let i = segs.length; i > 0; i--) {
     const prefix = segs.slice(0, i).join('/');
     if (globs.some((g) => matchesGlob(prefix, g))) {
@@ -75,7 +78,7 @@ export function initStore(dir = storeDir()): string {
   if (existsSync(join(dir, '.git'))) return dir;
   mkdirSync(dir, { recursive: true });
   git(dir, 'init', '-q', '-b', 'main');
-  writeFile(join(dir, '.gitignore'), 'inbox/\ndream.log\nusage.jsonl\n');
+  writeFile(join(dir, '.gitignore'), 'inbox/\ndream.log\nusage.jsonl\nremotes.json\n');
   writeFile(join(dir, 'org/_topics.md'), '# Topics\n');
   writeFile(join(dir, 'changes/.gitkeep'), '');
   commit(dir, 'init store');

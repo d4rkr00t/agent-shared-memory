@@ -54,6 +54,7 @@ dreams/<ts>.md                        converge reports
 inbox/                                raw transcripts (gitignored)
 dream.log                             rejected runs (gitignored)
 usage.jsonl                           tool/session usage events (gitignored)
+remotes.json                          SSH devboxes to pull transcripts from (gitignored)
 ```
 
 ### Scopes
@@ -93,10 +94,20 @@ npm run dream
 4. `checkTopics` (mechanical), then **Verify**: an independent agent reviews the diff against the evidence. `APPROVE` merges into `main`. `REJECT` logs to `dream.log`, and the changes stay pending.
 5. Every still-open change gets `runs += 1`. Changes reach 3 runs and expire.
 
+### Remote devboxes
+
+`npm run pull` copies new transcripts from your SSH devboxes into `inbox/`, where the next dream picks them up. List the hosts in `~/.agent-memory/remotes.json`:
+
+```json
+{ "devbox": "", "gpu-box": "" }
+```
+
+Each value is the last pull time, which `pull` updates (`""` = pull everything). Requirements: key-based `ssh <host>` that works without a prompt (`BatchMode=yes`), plus `git`, `find` and `tar` on the remote. The remote needs no plugin. Repo and scope come from the session's cwd on the remote. Pulled sessions only feed dreams: remote sessions don't get the index and can't propose. Stores created before this feature: add `remotes.json` to `.gitignore`.
+
 Only one dream runs at a time (lock). Run it nightly:
 
 ```bash
-0 3 * * * cd /path/to/agentic-distributed-memory && /usr/local/bin/node src/dream.ts >> ~/.agent-memory/cron.log 2>&1
+0 3 * * * cd /path/to/agentic-distributed-memory && { /usr/local/bin/node src/pull.ts; /usr/local/bin/node src/dream.ts; } >> ~/.agent-memory/cron.log 2>&1
 ```
 
 Undo a bad dream: `git -C ~/.agent-memory revert -m 1 <merge-commit>`.

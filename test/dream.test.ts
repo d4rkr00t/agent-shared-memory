@@ -66,6 +66,21 @@ write('changes/c-1/proposal.md', ${JSON.stringify(PROPOSAL())});`,
     assert.equal(existsSync(join(store, 'inbox/processed/s1.jsonl')), true);
   });
 
+  it('should condense only lines after meta offset for re-pulled session', () => {
+    const store = makeStore();
+    const lines = ['already dreamed', 'new turn'].map((t) => JSON.stringify({ type: 'user', message: { content: t } }) + '\n');
+    writeFile(join(store, 'inbox/s1.jsonl'), lines.join(''));
+    writeFile(join(store, 'inbox/s1.json'), JSON.stringify({ session_id: 's1', user: 'u1', repo: APP, scope: APP, cwd: '/x', host: 'box', offset: 1 }));
+    fakeClaude({
+      propose: `const s1 = fs.readFileSync(path.join(process.argv[process.argv.indexOf('--add-dir') + 1], 's1.md'), 'utf8');
+if (s1.includes('already dreamed') || !s1.includes('USER: new turn') || !s1.includes('host: box')) process.exit(1);`,
+      converge: `write(report, '- PENDING changes/none\\n');`,
+      verify: `console.log('REJECT');`,
+    });
+
+    assert.equal(dream(store).status, 'rejected');
+  });
+
   it('should merge converged specs into main and archive accepted changes on verify approve', () => {
     const store = makeStore({ 'changes/c-1/proposal.md': PROPOSAL() });
     fakeClaude({ converge: ACCEPT_TESTING, verify: `console.log('looks good\\nAPPROVE');` });

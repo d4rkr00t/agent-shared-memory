@@ -19,6 +19,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 | `src/cli.ts`, `bin/agent-memory` | Bash CLI: `search`, `view`, `propose`; logs each call to `usage.jsonl`. `bin/` wrapper fixes node env for the Bash sandbox |
 | `src/hooks.ts` | `session-start` (inject index, log `session` event), `session-end` (copy transcript to `inbox/`) |
 | `src/dream.ts` | dream CLI: condense, 3 passes, archive, expire, merge |
+| `src/pull.ts` | `npm run pull`: copy new transcripts from SSH devboxes in `remotes.json` into `inbox/` |
 | `src/stats.ts` | `npm run stats`: aggregates `usage.jsonl` + `changes/` into markdown |
 | `src/prompts.ts` | PROPOSE / CONVERGE / VERIFY prompts, `{{VAR}}` placeholders via `fill` |
 | `.claude-plugin/`, `hooks/hooks.json` | Claude Code plugin (hooks only, no MCP) + local marketplace |
@@ -65,6 +66,17 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 8. Final merge can't conflict: live sessions only add new `changes/<id>/` dirs.
 9. Each `claude -p` pass logs `[dream] HH:MM:SS pass: <name>…` to stderr. Passes take minutes; no output between them is normal.
 10. Dream `claude -p` calls: `--tools` whitelist, `acceptEdits`, `--no-session-persistence`, `--strict-mcp-config`, env `AGENT_MEMORY_DREAM=1` → hooks no-op (else dream transcripts feed inbox = loop).
+
+## Remote pull
+
+- Scope: the user's own SSH devboxes. Extraction only: remote sessions get no index and can't propose, and the remote needs no plugin (ssh + git + find + tar only).
+- `<store>/remotes.json` = `{ "<ssh host>": "<watermark>" }`, gitignored. A new host starts with `""` (pulls everything).
+- Separate command `npm run pull`, not part of dream. It takes the `dream` lock (no wait) and prints `locked: a dream is running` if a dream holds it, because a pull running mid-dream would rewrite inbox files that dream then moves to `processed/`, and their new lines would be lost. Cron: `pull; dream`.
+- Per host: `ssh -o BatchMode=yes` lists `~/.claude/projects/*/*.jsonl` (`-maxdepth 2`, no subagent files) newer than the watermark, then `tar`s them over. Long-open sessions get pulled too (no SessionEnd needed).
+- Watermark = remote `date -u +%Y%m%d%H%M.%S`, taken before `find`, so clock skew doesn't matter. Filter = `TZ=UTC touch -t` on a temp ref file + `find -newer`: BSD find rejects ISO `-newermt`.
+- `repo`/`scopes`/`user` are resolved on the remote, one ssh call per host (`RESOLVE` script: realpath, git root, origin, `.agent-memory.json`, email), then fed to the pure `scopeOf` shared with `resolveScope`. Meta adds `host`.
+- Growing sessions get re-pulled whole. Meta `offset` = line count of `inbox/processed/<id>.jsonl` (or the existing unprocessed meta's offset), and `condense` skips those lines.
+- A host failure logs `[pull] <host> failed: …`, keeps its watermark and doesn't stop the other hosts. `AGENT_MEMORY_SSH` overrides the binary (tests use a fake that runs the command locally with a fake `HOME`).
 
 ## Non-obvious facts
 
@@ -116,6 +128,7 @@ Two real sessions in `acme/app1` + `acme/app2` → dream merged `org/gotchas.md`
 - Ranked search (FTS5) → grep misses/floods on real store; embeddings after.
 - Confirmation dates, decay sweep → unused memories pile up (`npm run stats` lists never-retrieved ones).
 - Per-session proposer fan-out → inbox outgrows one context.
-- Auth, remote store, transcript redaction → leaving localhost.
+- Auth, remote store, transcript redaction → leaving localhost. Remote pull copies raw transcripts too.
+- Remote read side (index, propose on devboxes), teammates' machines, cloud sessions → remote sessions need memory, or need sharing beyond one user.
 - Transcript dedupe on resumed sessions; lock pid-reuse guard (see `ponytail:` comments).
-- Transcripts only reach `inbox/` on `SessionEnd`, so long-open desktop sessions never feed dreams. Pull from `~/.claude/projects/` when that matters.
+- Local transcripts only reach `inbox/` on `SessionEnd`, so long-open local desktop sessions never feed dreams. Fix = `pull` with no ssh prefix on local `~/.claude/projects/`.

@@ -44,8 +44,10 @@ function userHash(cwd: string): string {
   } catch {
     id = userInfo().username;
   }
-  return createHash('sha256').update(id).digest('hex').slice(0, 12);
+  return hashUser(id);
 }
+
+export const hashUser = (id: string) => createHash('sha256').update(id).digest('hex').slice(0, 12);
 
 // ponytail: resumed sessions re-copy the full transcript; dedupe by message uuid if dreams double-count
 function sessionEnd(input: HookInput, dir: string): void {

@@ -10,10 +10,10 @@ export type DreamResult = { status: 'locked' | 'empty' | 'merged' | 'rejected'; 
 
 const MAX_RUNS = 3;
 
-function condense(jsonl: string): string {
+function condense(jsonl: string, offset = 0): string {
   const out: string[] = [];
   const clip = (s: string, n = 2000) => (s.length > n ? s.slice(0, n) + ' …' : s);
-  for (const line of jsonl.split('\n')) {
+  for (const line of jsonl.split('\n').slice(offset)) {
     let e;
     try {
       e = JSON.parse(line);
@@ -111,8 +111,9 @@ function run(dir: string): DreamResult {
   for (const m of metas) {
     const meta = JSON.parse(readFileSync(join(inbox, m), 'utf8'));
     const jsonl = join(inbox, `${meta.session_id}.jsonl`);
-    const body = existsSync(jsonl) ? condense(readFileSync(jsonl, 'utf8')) : '';
-    writeFile(join(sessions, `${meta.session_id}.md`), `# Session ${meta.session_id}\nuser: ${meta.user ?? 'unknown'}\nrepo: ${meta.repo}\nscope: ${meta.scope}\ncwd: ${meta.cwd}\n\n${body}\n`);
+    const body = existsSync(jsonl) ? condense(readFileSync(jsonl, 'utf8'), meta.offset) : '';
+    const host = meta.host ? `host: ${meta.host}\n` : '';
+    writeFile(join(sessions, `${meta.session_id}.md`), `# Session ${meta.session_id}\nuser: ${meta.user ?? 'unknown'}\nrepo: ${meta.repo}\nscope: ${meta.scope}\ncwd: ${meta.cwd}\n${host}\n${body}\n`);
   }
 
   git(dir, 'worktree', 'add', '-q', '-b', branch, tree, 'main');
