@@ -107,6 +107,27 @@ if (s1.includes('already dreamed') || !s1.includes('USER: new turn') || !s1.incl
     assert.match(readFileSync(join(store, 'dream.log'), 'utf8'), /REJECT: evidence from one session only/);
   });
 
+  it('should set aside changes verify names, re-converge the rest and merge them', () => {
+    const store = makeStore({ 'changes/c-1/proposal.md': PROPOSAL(), 'changes/c-2/proposal.md': PROPOSAL() });
+    const bin = fakeClaude({
+      converge: `const ids = fs.readdirSync(path.join(cwd, 'changes')).filter((d) => d.startsWith('c-'));
+write('${APP}/_topics.md', ${JSON.stringify(topics(['testing', 'Tests', 'Covers tests, not CI']))});
+write('${APP}/testing.md', ${JSON.stringify(spec('testing', 'Tests', ['Runner', 'Tests SHALL run with npm test.\nEvidence: s0']))} + (ids.includes('c-2') ? '\\n### Requirement: Bad\\nBad.\\n' : ''));
+write(report, ids.map((id) => '- ACCEPT changes/' + id + ' -> ${APP}\\n').join(''));`,
+      verify: `const t = fs.readFileSync(path.join(cwd, '${APP}/testing.md'), 'utf8');
+console.log(t.includes('Bad') ? '- **REJECT changes/c-2: ungrounded**\\nREJECT: c-2 ungrounded' : 'APPROVE');`,
+    });
+
+    assert.deepEqual(dream(store), { status: 'merged' });
+    assert.deepEqual(calls(bin), ['PASS: converge', 'PASS: verify', 'PASS: converge', 'PASS: verify']);
+    const testing = readFileSync(join(store, APP, 'testing.md'), 'utf8');
+    assert.match(testing, /Tests SHALL run with npm test/);
+    assert.doesNotMatch(testing, /Bad/);
+    assert.equal(existsSync(join(store, 'changes/archive/c-1')), true);
+    assert.match(readFileSync(join(store, 'changes/c-2/proposal.md'), 'utf8'), /runs: 1[\s\S]*Verify-rejected \d{4}-\d{2}-\d{2}: REJECT: ungrounded/);
+    assert.equal(git(store, 'status', '--porcelain'), '');
+  });
+
   it('should reject run without calling verify when spec file has no registry entry', () => {
     const store = makeStore({ 'changes/c-1/proposal.md': PROPOSAL() });
     const bin = fakeClaude({

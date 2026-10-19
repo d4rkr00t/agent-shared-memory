@@ -197,7 +197,8 @@ Also check:
 - Every clause of every changed requirement is supported by its own Evidence sessions (read the transcripts / quotes in proposals).
 - It does not contradict another spec without resolving the conflict ("Overrides:" for a deeper scope).
 
-Output a short list of findings, then the LAST line must be exactly "APPROVE" or "REJECT: <one-line reason>". Any failing change rejects the whole run.`;
+Output a short list of findings. For every change whose result fails, add one line exactly "- REJECT changes/<id>: <one-line reason>", with <id> taken from the report's decision lines. The pipeline sets the named changes aside and re-runs converge on the rest, so name every failing change and only failing ones.
+The LAST line must be exactly "APPROVE" or "REJECT: <one-line reason>". A failure you cannot pin to a change rejects the whole run.`;
 
 export const fill = (prompt: string, vars: Record<string, string>) =>
   prompt.replace(/\{\{(\w+)\}\}/g, (m, k) => vars[k] ?? m);

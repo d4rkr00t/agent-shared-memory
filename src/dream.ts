@@ -9,6 +9,7 @@ import { CONVERGE, fill, PROPOSE, VERIFY } from './prompts.ts';
 export type DreamResult = { status: 'locked' | 'empty' | 'merged' | 'rejected'; reason?: string };
 
 const MAX_RUNS = 3;
+const MAX_ATTEMPTS = 3;
 
 function condense(jsonl: string, offset = 0): string {
   const out: string[] = [];
@@ -128,30 +129,50 @@ function run(dir: string): DreamResult {
       }
     }
     const base = git(tree, 'rev-parse', 'HEAD');
+    const open = openChanges(tree);
+    const parked = join(work, 'parked');
+    mkdirSync(parked);
+    // Changes verify named as failing are parked and the rest re-converge, so one bad change can't block the run.
+    const rejected = new Map<string, string>();
+    let verdict = 'REJECT: no open changes left to converge';
+    for (let attempt = 0; attempt < MAX_ATTEMPTS && rejected.size < open.length; attempt++) {
+      git(tree, 'reset', '-q', '--hard', base);
+      git(tree, 'clean', '-qfd');
+      for (const id of rejected.keys()) renameSync(join(tree, 'changes', id), join(parked, id));
+      claude(tree, fill(CONVERGE, vars), 'Read,Write,Edit,Glob,Grep', sessions);
+      removeEmptySpecs(tree);
+      const decided = existsSync(join(tree, report)) && applyDecisions(tree, readFileSync(join(tree, report), 'utf8'), ts);
+      for (const id of rejected.keys()) renameSync(join(parked, id), join(tree, 'changes', id));
+      commit(tree, 'dream: pass 2 converge');
 
-    claude(tree, fill(CONVERGE, vars), 'Read,Write,Edit,Glob,Grep', sessions);
-    removeEmptySpecs(tree);
-    const decided = existsSync(join(tree, report)) && applyDecisions(tree, readFileSync(join(tree, report), 'utf8'), ts);
-    commit(tree, 'dream: pass 2 converge');
+      const topicErrors = checkTopics(tree);
+      let out = '';
+      if (!decided) {
+        verdict = `REJECT: converge wrote no decisions to ${report}`;
+      } else if (topicErrors.length) {
+        verdict = `REJECT: checkTopics failed: ${topicErrors.join('; ')}`;
+      } else {
+        writeFile(join(work, 'dream.diff'), git(tree, 'diff', base, 'HEAD'));
+        out = claude(tree, fill(VERIFY, vars), 'Read,Glob,Grep', work).replace(/[*`]/g, '');
+        verdict = out.trim().split('\n').filter(Boolean).at(-1)?.trim() ?? 'REJECT: verify produced no output';
+      }
+      if (verdict === 'APPROVE') break;
 
-    const topicErrors = checkTopics(tree);
-    let verdict: string;
-    if (!decided) {
-      verdict = `REJECT: converge wrote no decisions to ${report}`;
-    } else if (topicErrors.length) {
-      verdict = `REJECT: checkTopics failed: ${topicErrors.join('; ')}`;
-    } else {
-      writeFile(join(work, 'dream.diff'), git(tree, 'diff', base, 'HEAD'));
-      const out = claude(tree, fill(VERIFY, vars), 'Read,Glob,Grep', work);
-      verdict = out.replace(/[*`]/g, '').trim().split('\n').filter(Boolean).at(-1)?.trim() ?? 'REJECT: verify produced no output';
+      const named = [...out.matchAll(/^\s*- REJECT changes\/([^\s/:]+):\s*(.*)$/gm)].filter(([, id]) => open.includes(id) && !rejected.has(id));
+      for (const [, id, reason] of named) rejected.set(id, `REJECT: ${reason.trim()}`);
+      if (!named.length) {
+        for (const id of open) if (!rejected.has(id)) rejected.set(id, verdict);
+        break;
+      }
     }
 
     const approved = verdict === 'APPROVE';
     withLock(dir, 'commit', () => {
       if (approved) merge(dir, branch, `dream ${ts}: converge`);
-      else for (const id of openChanges(dir)) appendFileSync(join(dir, 'changes', id, 'proposal.md'), `\nVerify-rejected ${ts.slice(0, 10)}: ${verdict}\n`);
+      for (const [id, reason] of rejected) appendFileSync(join(dir, 'changes', id, 'proposal.md'), `\nVerify-rejected ${ts.slice(0, 10)}: ${reason}\n`);
       bumpRuns(dir);
     });
+    for (const [id, reason] of rejected) appendFileSync(join(dir, 'dream.log'), `${ts} changes/${id} ${reason}\n`);
     if (approved) return { status: 'merged' };
     appendFileSync(join(dir, 'dream.log'), `${ts} ${verdict}\n`);
     return { status: 'rejected', reason: verdict };

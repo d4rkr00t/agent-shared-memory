@@ -61,8 +61,8 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 3. Converge edits specs/registries only. It writes decision lines `- ACCEPT|REJECT|PENDING changes/<id>` in `dreams/<ts>.md`; **the script** archives changes from those lines. No lines → run rejected.
 4. Agents can't delete files (no Bash). Empty spec file = delete; script removes them.
 5. `checkTopics` (mechanical) runs before verify; failure rejects without calling verify.
-6. Verify last line must be exactly `APPROVE` (markdown `*`/`` ` `` stripped). Anything else = reject → `dream.log`.
-7. `runs` bump + expiry (≥3) happens on `main` after merge/reject, so it counts rejected runs too. On reject, every open `proposal.md` first gets `Verify-rejected <date>: <verdict>` so the next converge sees why (otherwise it repeats the same mistake until expiry).
+6. Verify last line must be exactly `APPROVE` (markdown `*`/`` ` `` stripped). Verify names failing changes as `- REJECT changes/<id>: <reason>`; those are parked outside the tree and converge + verify re-run on the rest from `base` (≤3 attempts), so one bad change can't block the run (it used to: every run was rejected and good changes expired). A reject that names no change = whole run rejected. Rejections → `dream.log`.
+7. `runs` bump + expiry (≥3) happens on `main` after merge/reject, so it counts rejected runs too. Each rejected change's `proposal.md` (only the named ones; all open ones when verify named none) first gets `Verify-rejected <date>: <reason>` so the next converge sees why (otherwise it repeats the same mistake until expiry).
 8. Final merge can't conflict: live sessions only add new `changes/<id>/` dirs.
 9. Each `claude -p` pass logs `[dream] HH:MM:SS pass: <name>…` to stderr. Passes take minutes; no output between them is normal.
 10. Dream `claude -p` calls: `--tools` whitelist, `acceptEdits`, `--no-session-persistence`, `--strict-mcp-config`, env `AGENT_MEMORY_DREAM=1` → hooks no-op (else dream transcripts feed inbox = loop).
