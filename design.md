@@ -23,6 +23,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 | `src/prompts.ts` | PROPOSE / CONVERGE / VERIFY prompts, `{{VAR}}` placeholders via `fill` |
 | `.claude-plugin/`, `hooks/hooks.json` | Claude Code plugin (hooks only, no MCP) + local marketplace |
 | `test/*.test.ts` | integration tests: temp stores, real git, fake `claude`. `tools.test.ts` calls `tools()` directly, `cli.test.ts` spawns the CLI |
+| `evals/*.eval.ts` | prompt evals: real `claude` dream runs on fixture stores, N trials, see Evals |
 
 ## CLI
 
@@ -75,6 +76,14 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 - Prompt quality rules live in one `QUALITY` block in `src/prompts.ts` (atomic, trigger/action/consequence, grounded clauses, evidence strength, shared-vs-personal, never-store list) shared by all 3 passes. Dream passes can't read repos (`NO_REPO`): "obvious from code" is judged from transcripts only.
 - Fake `claude` in tests keys on `PASS: <name>` first line of each prompt and on `write dreams/….md` for report path. Keep both if editing prompts.
 - Proposer skips knowledge obvious from code (by prompt) — e.g. it ignored a `npm test` → `test:ci` error that self-documents.
+
+## Evals
+
+- `npm run eval` (`evals/*.eval.ts`): real `claude -p` dream runs on fixture stores, graded by asserts on the merged store. Separate from `npm test`, which fakes `claude`. Run with sandbox off; `AGENT_MEMORY_CLAUDE` is ignored.
+- Each case = `trial(name, setup, check)` in `evals/helpers.ts`: `EVAL_TRIALS` (default 3) fresh stores dream in parallel (`node src/dream.ts` with `AGENT_MEMORY_DIR`), pass at ≥ `EVAL_MIN_PASS` (default 2).
+- Fixtures: `session(store, id, { repo, user, turns })` writes inbox jsonl + meta like the SessionEnd hook. Turns: `user`, `assistant`, `tool` (tool_use), `error` (tool_result `is_error`).
+- Cases: level rules, rejections (personal pref, secret), contradictions, topic placement + confirmation dedupe. Negative cases accept any dream status; positive ones require `merged`.
+- Cost: 3 `claude -p` passes per trial, minutes each. Dream sessions load the runner's global CLAUDE.md, so results depend on whose machine runs them.
 
 ## Usage metrics
 
