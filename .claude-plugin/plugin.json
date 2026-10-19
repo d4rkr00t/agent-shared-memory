@@ -1,5 +1,6 @@
 {
   "name": "agent-memory",
   "version": "0.1.0",
-  "description": "Org-wide shared agent memory: topic specs, proposals, dreaming"
+  "description": "Org-wide shared agent memory: topic specs, proposals, dreaming",
+  "types": "./types/index.d.ts"
 }

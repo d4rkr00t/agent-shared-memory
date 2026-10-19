@@ -6,5 +6,6 @@
     "SessionEnd": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/src/hooks.ts\" session-end" }] }
     ]
-  }
+  },
+  "modules": ["./register.tsx"]
 }

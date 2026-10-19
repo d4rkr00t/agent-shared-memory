@@ -10,6 +10,7 @@
     "test": "node --test --test-concurrency=1 'test/*.test.ts'",
     "dream": "node src/dream.ts",
     "stats": "node src/stats.ts",
+    "test:mod": "d=$(mktemp -d \"${TMPDIR:-/tmp}/mod.XXXXXX\") && cp -R .claude-plugin hooks types $d && cp test/*.test.tsx $d && claude plugin test $d",
     "eval": "node --test 'evals/*.eval.ts'"
   },
   "engines": {
