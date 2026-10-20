@@ -51,7 +51,7 @@ describe('dream', () => {
     const store = storeWithInbox();
     fakeClaude({
       propose: `const sessions = process.argv[process.argv.indexOf('--add-dir') + 1];
-const s1 = fs.readFileSync(path.join(sessions, 's1.md'), 'utf8');
+const s1 = fs.readFileSync(path.join(sessions, 'sessions/s1.md'), 'utf8');
 if (!s1.includes('user: u1') || !s1.includes('USER: use npm test')) process.exit(1);
 write('changes/c-1/proposal.md', ${JSON.stringify(PROPOSAL())});`,
       converge: `write(report, '- PENDING changes/c-1\\n');`,
@@ -66,13 +66,46 @@ write('changes/c-1/proposal.md', ${JSON.stringify(PROPOSAL())});`,
     assert.equal(existsSync(join(store, 'inbox/processed/s1.jsonl')), true);
   });
 
+  it('should pass zero-hit searches since last report to propose with session scopes', () => {
+    const store = storeWithInbox();
+    writeFile(join(store, 'dreams/2026-10-18T00-00-00-000Z.md'), '# old report\n');
+    const usage = [
+      { ts: '2026-10-19T00:00:00.000Z', session: 's1', event: 'session', scopes: ['org', APP] },
+      { ts: '2026-10-17T00:00:00.000Z', session: 's1', event: 'search', pattern: 'before-report', total: 0 },
+      { ts: '2026-10-19T00:00:01.000Z', session: 's1', event: 'search', pattern: 'jest|vitest', topic: 'testing', total: 0 },
+      { ts: '2026-10-19T00:00:02.000Z', session: 's1', event: 'search', pattern: 'has-hits', total: 1 },
+      { ts: '2026-10-19T00:00:03.000Z', session: 's1', event: 'search', error: 'bad regex' },
+    ];
+    writeFile(join(store, 'usage.jsonl'), usage.map((e) => JSON.stringify(e)).join('\n') + '\n');
+    const bin = fakeClaude({
+      propose: `const work = process.argv[process.argv.indexOf('--add-dir') + 1];
+if (fs.readFileSync(path.join(work, 'misses.md'), 'utf8') !== '- s1: "jest|vitest" scopes: org, ${APP} --topic testing') process.exit(1);
+if (!fs.existsSync(path.join(work, 'sessions/s1.md'))) process.exit(1);`,
+    });
+
+    dream(store);
+
+    assert.equal(calls(bin)[0], 'PASS: propose');
+  });
+
+  it('should run dream on search misses alone with empty inbox', () => {
+    const store = makeStore();
+    writeFile(join(store, 'usage.jsonl'), JSON.stringify({ ts: '2026-10-19T00:00:00.000Z', session: 's1', event: 'search', pattern: 'jest', total: 0 }) + '\n');
+    const bin = fakeClaude({ propose: `write('changes/c-1/proposal.md', ${JSON.stringify(PROPOSAL())});`, converge: `write(report, '- PENDING changes/c-1\\n');`, verify: `console.log('REJECT: pending');` });
+
+    dream(store);
+
+    assert.deepEqual(calls(bin), ['PASS: propose', 'PASS: converge', 'PASS: verify']);
+    assert.equal(git(store, 'show', 'main:changes/c-1/proposal.md').includes('scope: ' + APP), true);
+  });
+
   it('should condense only lines after meta offset for re-pulled session', () => {
     const store = makeStore();
     const lines = ['already dreamed', 'new turn'].map((t) => JSON.stringify({ type: 'user', message: { content: t } }) + '\n');
     writeFile(join(store, 'inbox/s1.jsonl'), lines.join(''));
     writeFile(join(store, 'inbox/s1.json'), JSON.stringify({ session_id: 's1', user: 'u1', repo: APP, scope: APP, cwd: '/x', host: 'box', offset: 1 }));
     fakeClaude({
-      propose: `const s1 = fs.readFileSync(path.join(process.argv[process.argv.indexOf('--add-dir') + 1], 's1.md'), 'utf8');
+      propose: `const s1 = fs.readFileSync(path.join(process.argv[process.argv.indexOf('--add-dir') + 1], 'sessions/s1.md'), 'utf8');
 if (s1.includes('already dreamed') || !s1.includes('USER: new turn') || !s1.includes('host: box')) process.exit(1);`,
       converge: `write(report, '- PENDING changes/none\\n');`,
       verify: `console.log('REJECT');`,

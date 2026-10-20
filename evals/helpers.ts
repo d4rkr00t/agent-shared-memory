@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { it } from 'node:test';
 import { promisify } from 'node:util';
@@ -28,6 +28,16 @@ export function session(store: string, id: string, o: { repo: string; user?: str
   });
   writeFile(join(store, `inbox/${id}.jsonl`), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
   writeFile(join(store, `inbox/${id}.json`), JSON.stringify({ session_id: id, user: o.user ?? `u-${id}`, repo: o.repo, scope: o.repo, cwd: '/work' }));
+}
+
+// Appends a session event + zero-hit search to usage.jsonl like the CLI logs them.
+export function miss(store: string, id: string, pattern: string, scopes: string[]): void {
+  const ts = new Date().toISOString();
+  const events = [
+    { ts, session: id, event: 'session', source: 'startup', scopes },
+    { ts, session: id, event: 'search', pattern, total: 0, hits: [] },
+  ];
+  appendFileSync(join(store, 'usage.jsonl'), events.map((e) => JSON.stringify(e)).join('\n') + '\n');
 }
 
 export type Req = { path: string; text: string };

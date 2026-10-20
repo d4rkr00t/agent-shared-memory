@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkTopics, commit, frontmatter, git, initStore, storeDir, withLock, writeFile } from './store.ts';
+import { checkTopics, commit, frontmatter, git, initStore, storeDir, usageLog, withLock, writeFile } from './store.ts';
 import { CONVERGE, fill, PROPOSE, VERIFY } from './prompts.ts';
 
 export type DreamResult = { status: 'locked' | 'empty' | 'merged' | 'rejected'; reason?: string };
@@ -85,6 +85,27 @@ function bumpRuns(dir: string): void {
   commit(dir, 'dream: bump runs, expire stale changes');
 }
 
+// Zero-hit searches since the newest dream report on main, one line each, with the session's readable scopes.
+function misses(dir: string): string[] {
+  if (!existsSync(usageLog(dir))) return [];
+  const reports = existsSync(join(dir, 'dreams')) ? readdirSync(join(dir, 'dreams')).sort() : [];
+  const since = reports.at(-1)?.replace(/\.md$/, '') ?? '';
+  const events = readFileSync(usageLog(dir), 'utf8').split('\n').flatMap((l) => {
+    try {
+      return [JSON.parse(l)];
+    } catch {
+      return [];
+    }
+  });
+  const scopes = new Map(events.filter((e) => e.event === 'session').map((e) => [e.session, e.scopes]));
+  return events
+    .filter((e) => e.event === 'search' && !e.error && e.total === 0 && e.ts.replace(/[:.]/g, '-') > since)
+    .map((e) => {
+      const filter = [e.scope && `--scope ${e.scope}`, e.topic && `--topic ${e.topic}`].filter(Boolean).join(' ');
+      return `- ${e.session}: "${e.pattern}" scopes: ${(scopes.get(e.session) ?? ['unknown']).join(', ')}${filter ? ' ' + filter : ''}`;
+    });
+}
+
 export function dream(dir = storeDir()): DreamResult {
   initStore(dir);
   try {
@@ -98,7 +119,8 @@ export function dream(dir = storeDir()): DreamResult {
 function run(dir: string): DreamResult {
   const inbox = join(dir, 'inbox');
   const metas = existsSync(inbox) ? readdirSync(inbox).filter((f) => f.endsWith('.json')) : [];
-  if (!metas.length && !openChanges(dir).length) return { status: 'empty' };
+  const missed = misses(dir);
+  if (!metas.length && !openChanges(dir).length && !missed.length) return { status: 'empty' };
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const work = mkdtempSync(join(tmpdir(), 'dream-'));
@@ -108,6 +130,7 @@ function run(dir: string): DreamResult {
   const report = `dreams/${ts}.md`;
   const vars = { SESSIONS: sessions, WORK: work, REPORT: report, DATE: ts.slice(0, 10) };
   mkdirSync(sessions);
+  writeFile(join(work, 'misses.md'), missed.join('\n') || 'none');
 
   for (const m of metas) {
     const meta = JSON.parse(readFileSync(join(inbox, m), 'utf8'));
@@ -119,8 +142,8 @@ function run(dir: string): DreamResult {
 
   git(dir, 'worktree', 'add', '-q', '-b', branch, tree, 'main');
   try {
-    if (metas.length) {
-      claude(tree, fill(PROPOSE, vars), 'Read,Write,Edit,Glob,Grep', sessions);
+    if (metas.length || missed.length) {
+      claude(tree, fill(PROPOSE, vars), 'Read,Write,Edit,Glob,Grep', work);
       commit(tree, 'dream: pass 1 propose');
       withLock(dir, 'commit', () => merge(dir, branch, `dream ${ts}: proposals`));
       mkdirSync(join(inbox, 'processed'), { recursive: true });

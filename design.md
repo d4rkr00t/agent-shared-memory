@@ -67,6 +67,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 8. Final merge can't conflict: live sessions only add new `changes/<id>/` dirs.
 9. Each `claude -p` pass logs `[dream] HH:MM:SS pass: <name>…` to stderr. Passes take minutes; no output between them is normal.
 10. Dream `claude -p` calls: `--tools` whitelist, `acceptEdits`, `--no-session-persistence`, `--strict-mcp-config`, env `AGENT_MEMORY_DREAM=1` → hooks no-op (else dream transcripts feed inbox = loop).
+11. Search misses: `misses()` in `src/dream.ts` takes zero-hit `search` events from `usage.jsonl` newer than the newest `dreams/<ts>.md` on main (rejected runs write no report, so their misses are fed again), joins each with its session's `scopes`, writes `<work>/misses.md`. Misses alone start a run. Propose gets `--add-dir <work>` (sessions + misses). Propose turns misses on requirements that already exist into `source: misses` changes: rename/split/merge topics, rewrite Purpose/Boundary/description, move requirements, add the missed terms. Rule meaning and `Evidence:` never change, level rules don't apply, ACCEPT needs misses from 2+ sessions (else PENDING) (`MISSES` block in `src/prompts.ts`, shared by all 3 passes). Misses that no requirement covers are skipped; new knowledge comes only from transcripts.
 
 ## Remote pull
 
@@ -95,7 +96,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 - `npm run eval` (`evals/*.eval.ts`): real `claude -p` dream runs on fixture stores, graded by asserts on the merged store. Separate from `npm test`, which fakes `claude`. Run with sandbox off; `AGENT_MEMORY_CLAUDE` is ignored.
 - Each case = `trial(name, setup, check)` in `evals/helpers.ts`: `EVAL_TRIALS` (default 3) fresh stores dream in parallel (`node src/dream.ts` with `AGENT_MEMORY_DIR`), pass at ≥ `EVAL_MIN_PASS` (default 2).
 - Fixtures: `session(store, id, { repo, user, turns })` writes inbox jsonl + meta like the SessionEnd hook. Turns: `user`, `assistant`, `tool` (tool_use), `error` (tool_result `is_error`).
-- Cases: level rules, rejections (personal pref, secret), contradictions, topic placement + confirmation dedupe. Negative cases accept any dream status; positive ones require `merged`.
+- Cases: level rules, rejections (personal pref, secret), contradictions, topic placement + confirmation dedupe, search misses (`miss()` writes usage events; 2 sessions → missed patterns hit, 1 → specs untouched). Negative cases accept any dream status; positive ones require `merged`.
 - Session evals (`evals/search.eval.ts`): `trial(..., run)` with `runSession(task, files)` instead of dream. Real `claude -p --plugin-dir <repo>` in a temp `acme/app1` repo (push goes to a local bare repo), store via `AGENT_MEMORY_DIR`. Pass = `usage.jsonl` shows the planted requirement in `search` hits or a `view` of its spec. Cases: before tests, before push, after a failed command.
 - Cost: 3 `claude -p` passes per trial, minutes each. Dream sessions load the runner's global CLAUDE.md, so results depend on whose machine runs them.
 
@@ -107,6 +108,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
   - `view`: `path` (absent = list call). `propose`: `scope`, `topic`, `id`.
   - Tool throws → `{event: <tool>, error}` instead of extras (logged in the CLI's catch).
 - Gitignored because store `commit` runs `git add -A`. Only new stores get the ignore line (`initStore`); older stores need it added by hand, else raw patterns land in git.
+- The dream reads zero-hit searches from the log (Dream pipeline invariants 11), so the gitignored log is a dream input too, not only stats.
 - Dream sessions don't log: hooks no-op on `AGENT_MEMORY_DREAM`, dream agents get no Bash, so they can't call the CLI.
 - `npm run stats` (`src/stats.ts`): adoption, search zero-hit rate + top zero-hit patterns, per-requirement search hits + per-spec views + never-retrieved list, proposal funnel per `source`. Funnel reads `changes/` + `changes/archive/` (`Archived: accepted|rejected|expired` note), not the log.
 - Requirement identity = `scope / topic / requirement name`. Renaming a requirement resets its count. No time filter (add `--since` when log grows).

@@ -49,6 +49,7 @@ updated: <YYYY-MM-DD>
 ### Requirement: <name>
 <statement, see Memory quality>
 [Overrides: <shallower scope>/<topic>: <requirement name>]
+[Search terms: <terms agents searched for that missed this requirement>]
 Evidence: <comma-separated session ids>
 [Status: disputed
 Disputed-by: <session ids>]
@@ -80,6 +81,14 @@ A contradiction is a session that followed an existing requirement and it failed
 - 2 or more distinct contradicting sessions → ACCEPT as: rewrite the requirement to what actually worked, or remove it
 - A confirmation of a disputed requirement from a session not in Disputed-by → remove "Status: disputed" and "Disputed-by"`;
 
+const MISSES = `## Search misses (changes with "source: misses")
+Agents search specs with a case-insensitive regex over requirement text. A zero-hit search for something a requirement already covers means the memory exists but cannot be found.
+- Allowed: rename, split or merge topics; rewrite Purpose, Boundary and spec "description"; move a requirement to the topic whose Boundary fits (REMOVED in the old spec + ADDED in the new); add the missed search terms as one line "Search terms: <term>, <term>" after the statement.
+- Never change what a rule tells agents to do: leave its statement as it is, never weave search terms into it. Never change its Evidence line. The miss session ids go in the proposal only.
+- Level rules do not apply: no new knowledge, the requirement stays at its scope.
+- ACCEPT only with misses from 2 or more distinct sessions; 1 session → PENDING.
+- Grounding for these changes is the quoted search patterns, not transcript lines. A "Search terms:" line is not a clause; the rule's existing clauses keep their existing Evidence.`;
+
 const NO_REPO = `The repo's code and docs are NOT available to you. Judge "obvious from reading the code" only from the transcripts: an agent that read the file and then succeeded on the first try means obvious.`;
 
 export const PROPOSE = `PASS: propose
@@ -99,6 +108,8 @@ Task: read ALL transcripts together and find knowledge that future agents need a
 - an existing requirement that was followed and worked (confirmation; this is how requirements get promoted)
 Single-session findings are allowed, but cite exactly what happened.
 
+Also read {{WORK}}/misses.md: zero-hit searches since the last dream, one per line as "- <session id>: "<pattern>" scopes: <readable scopes>". For each miss, read the specs of its scopes. If a requirement already covers what the agent searched for but its wording, topic name or placement made the regex miss, create or extend a change with "source: misses", "sessions:" = the miss session ids, evidence lines "- <session id>: search miss "<pattern>"", and a delta that fixes findability: MODIFIED with the unchanged statement plus a "Search terms:" line, and/or REMOVED + ADDED to move it. Put registry edits (rename, split, merge, new Purpose/Boundary) under "## Topic restructure" in proposal.md. If nothing covers the miss, skip it.
+
 ${TOPICS}
 
 ${QUALITY}
@@ -106,6 +117,8 @@ ${QUALITY}
 ${SPEC}
 
 ${CONTRADICTIONS}
+
+${MISSES}
 
 ## What to write
 Do NOT edit specs or _topics.md. Only create or extend changes:
@@ -152,6 +165,8 @@ ${LEVELS}
 
 ${CONTRADICTIONS}
 
+${MISSES}
+
 ${SPEC}
 
 ## Applying a change
@@ -180,6 +195,7 @@ Input:
 - {{WORK}}/dream.diff — every change made in this run (specs, registries, archived proposals, report)
 - the store at its new state in the current directory, including the run report under dreams/
 - {{WORK}}/sessions/*.md — this run's condensed transcripts; older evidence is quoted in changes/archive/<id>/proposal.md
+- {{WORK}}/misses.md — this run's zero-hit searches; older ones are quoted in proposal.md of "source: misses" changes
 
 Check every spec change:
 ${TOPICS}
@@ -192,6 +208,8 @@ ${NO_REPO}
 ${LEVELS}
 
 ${CONTRADICTIONS}
+
+${MISSES}
 
 Also check:
 - Every clause of every changed requirement is supported by its own Evidence sessions (read the transcripts / quotes in proposals).
