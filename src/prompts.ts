@@ -12,7 +12,7 @@ const TOPICS = `## 1. TOPIC STRUCTURE — EXTREMELY IMPORTANT, CHECK THIS FIRST
 ${TOPIC_RULE}
 - _topics.md format, one entry per topic:
   ## <kebab-case-name>
-  Purpose: <one line>
+  Purpose: <short phrase>
   Boundary: Covers <X>, not <Y> (see <other-topic>).
 - Topics in one scope must not overlap. Two topics that cover the same ground are a defect.
 - Prefer a few broad, well-bounded topics (testing, build, deploy, git, code-style, architecture, gotchas) over many tiny ones. Never create a topic for a single requirement unless no boundary can fit it.
@@ -42,7 +42,7 @@ const SPEC = `## Spec format
 <scope>/<topic>.md:
 ---
 topic: <topic, must equal the file name>
-description: <one line listing the concrete triggers covered (commands, tools, error strings); shown in every session's index so agents know when to search>
+description: <a few generic keywords for when to search, e.g. "git push, ssh, sandbox"; no error strings, not over-specific; shown in every session's index>
 updated: <YYYY-MM-DD>
 ---
 

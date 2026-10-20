@@ -33,13 +33,13 @@ describe('hooks', () => {
     assert.match(
       out,
       new RegExp(
-        `## org\\n- git — Git workflow \\| Branch and commit rules\\n` +
-          `## ${APP}\\n- testing — How tests run \\| Use npm test\\n` +
-          `## ${APP}/packages/ui\\n- styling — CSS conventions \\| Tokens only`,
+        `## org\\n- git — Branch and commit rules\\n` +
+          `## ${APP}\\n- testing — Use npm test\\n` +
+          `## ${APP}/packages/ui\\n- styling — Tokens only`,
       ),
     );
-    assert.match(out, /TOPIC STRUCTURE IS EXTREMELY IMPORTANT/);
-    assert.match(out, /built-in memory only for personal user preferences/);
+    assert.match(out, /Never a near-miss topic/);
+    assert.match(out, /Personal preferences .* built-in memory/);
   });
 
   it('should copy transcript + meta into inbox/ on session end', () => {

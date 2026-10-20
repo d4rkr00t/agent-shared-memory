@@ -87,7 +87,7 @@ describe('stats', () => {
     const out = stats(fixture(), tmp());
 
     assert.match(out, /INITIAL MESSAGE\n {2}scopes org {3}\d+ chars {3}~\d+ tokens\n\n {2}# Shared agent memory\n/);
-    assert.match(out, /\n {2}## org\n {2}- git — Git \| Git rules\n/);
+    assert.match(out, /\n {2}## org\n {2}- git — Git rules\n/);
   });
 
   it('should print "none" for empty memory sections', () => {

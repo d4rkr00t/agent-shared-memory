@@ -159,8 +159,7 @@ export function index(dir: string, scopes: string[]): string {
     out.push(`## ${scope}`);
     if (!topics.length) out.push('(no topics yet)');
     for (const t of topics) {
-      const desc = frontmatter(read(join(dir, scope, `${t.name}.md`))).description ?? '';
-      out.push(`- ${t.name} — ${t.purpose}${desc ? ` | ${desc}` : ''}`);
+      out.push(`- ${t.name} — ${frontmatter(read(join(dir, scope, `${t.name}.md`))).description || t.purpose}`);
     }
   }
   return out.join('\n');

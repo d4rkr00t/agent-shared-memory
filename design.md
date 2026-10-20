@@ -9,7 +9,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 - **Memory = spec.** One file per topic per scope, `### Requirement:` blocks (SHALL/SHOULD + `Evidence:` session ids).
 - **Live sessions never write specs.** Read via `search`/`view`, write only `propose` → new `changes/<id>/`.
 - **Only the dream pipeline changes specs**: propose → converge → verify, auto-merge, no human. Safety net = verify + `git revert`.
-- **Topic structure is the #1 rule** (user requirement). Stated as "EXTREMELY IMPORTANT" in `TOPIC_RULE` (`src/store.ts`), reused by every dream prompt and the SessionStart text. Keep it that way.
+- **Topic structure is the #1 rule** (user requirement). Stated as "EXTREMELY IMPORTANT" in `TOPIC_RULE` (`src/store.ts`), reused by every dream prompt. SessionStart carries only a one-line form (pick topic by Boundary, else `new_topic`, never a near-miss) to keep the message short (user, 2026-10-20). Keep it that way.
 
 ## Files
 
@@ -29,7 +29,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 ## CLI
 
 - `sh <plugin>/bin/agent-memory search|view|propose`; `propose` takes JSON on stdin. The SessionStart text is the only place agents learn the commands, with absolute paths baked in from `import.meta.dirname`.
-- SessionStart text opens with MUST search triggers (first build/test/lint/format, push/deploy/release, after a failed command, related topic in index → view). The old single "search before relying on assumptions" line got 0 searches from real sessions (2026-10-19). Pull only, no auto-inject hooks (user choice).
+- SessionStart text opens with MUST search triggers (first build/test/lint/format, push/deploy/release, after a failed command, related topic in index → view). The old single "search before relying on assumptions" line got 0 searches from real sessions (2026-10-19). Pull only, no auto-inject hooks (user choice). Rest of the text: CLI usage, then what to record (failure/correction only, requirement template, scope/topic, delta sections one line each). Caveman-lite wording. Index line is `- <topic> — <spec description, else Purpose>`; dream writes description as a few generic keywords, not error strings.
 - Scopes come from the Bash cwd (`resolveScope(process.cwd())`).
 - Handlers live in `tools()` in `src/cli.ts`: they return a string or throw. The CLI prints errors to stderr: exit 1 for a tool error, exit 2 for usage or unknown flags. `--help` prints usage.
 - `propose` rejects: unreadable scope, non-kebab topic, unregistered topic without matching `new_topic`, delta without an `## ADDED|MODIFIED|REMOVED Requirements` section or without a `### Requirement: <name>` block, empty `why`.
