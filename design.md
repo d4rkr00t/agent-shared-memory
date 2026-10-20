@@ -29,6 +29,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 ## CLI
 
 - `sh <plugin>/bin/agent-memory search|view|propose`; `propose` takes JSON on stdin. The SessionStart text is the only place agents learn the commands, with absolute paths baked in from `import.meta.dirname`.
+- SessionStart text opens with MUST search triggers (first build/test/lint/format, push/deploy/release, after a failed command, related topic in index → view). The old single "search before relying on assumptions" line got 0 searches from real sessions (2026-10-19). Pull only, no auto-inject hooks (user choice).
 - Scopes come from the Bash cwd (`resolveScope(process.cwd())`).
 - Handlers live in `tools()` in `src/cli.ts`: they return a string or throw. The CLI prints errors to stderr: exit 1 for a tool error, exit 2 for usage or unknown flags. `--help` prints usage.
 - `propose` rejects: unreadable scope, non-kebab topic, unregistered topic without matching `new_topic`, delta without an `## ADDED|MODIFIED|REMOVED Requirements` section or without a `### Requirement: <name>` block, empty `why`.
@@ -95,6 +96,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 - Each case = `trial(name, setup, check)` in `evals/helpers.ts`: `EVAL_TRIALS` (default 3) fresh stores dream in parallel (`node src/dream.ts` with `AGENT_MEMORY_DIR`), pass at ≥ `EVAL_MIN_PASS` (default 2).
 - Fixtures: `session(store, id, { repo, user, turns })` writes inbox jsonl + meta like the SessionEnd hook. Turns: `user`, `assistant`, `tool` (tool_use), `error` (tool_result `is_error`).
 - Cases: level rules, rejections (personal pref, secret), contradictions, topic placement + confirmation dedupe. Negative cases accept any dream status; positive ones require `merged`.
+- Session evals (`evals/search.eval.ts`): `trial(..., run)` with `runSession(task, files)` instead of dream. Real `claude -p --plugin-dir <repo>` in a temp `acme/app1` repo (push goes to a local bare repo), store via `AGENT_MEMORY_DIR`. Pass = `usage.jsonl` shows the planted requirement in `search` hits or a `view` of its spec. Cases: before tests, before push, after a failed command.
 - Cost: 3 `claude -p` passes per trial, minutes each. Dream sessions load the runner's global CLAUDE.md, so results depend on whose machine runs them.
 
 ## Usage metrics

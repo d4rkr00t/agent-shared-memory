@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { it } from 'node:test';
 import { promisify } from 'node:util';
 import assert from 'node:assert/strict';
-import { writeFile } from '../src/store.ts';
-import { makeStore } from '../test/helpers.ts';
+import { git, writeFile } from '../src/store.ts';
+import { makeRepo, makeStore } from '../test/helpers.ts';
 
 export { spec, topics } from '../test/helpers.ts';
 
@@ -14,7 +14,8 @@ export const APP2 = 'repos/github.com/acme/app2';
 
 const TRIALS = Number(process.env.EVAL_TRIALS ?? 3);
 const MIN_PASS = Number(process.env.EVAL_MIN_PASS ?? 2);
-const DREAM = join(import.meta.dirname, '../src/dream.ts');
+const ROOT = join(import.meta.dirname, '..');
+const DREAM = join(ROOT, 'src/dream.ts');
 
 type Turn = ['user' | 'assistant', string] | ['tool', string, unknown] | ['error', string];
 
@@ -54,14 +55,34 @@ async function runDream(store: string): Promise<string> {
   return stdout.trim();
 }
 
-// Runs setup + dream + check on TRIALS fresh stores in parallel; passes when at least MIN_PASS checks pass.
-export function trial(name: string, setup: (store: string) => void, check: (store: string, status: string) => void): void {
+type Run = (store: string) => Promise<string>;
+
+// Live session in an acme/app1 repo with this plugin loaded; push goes to a local bare repo.
+export function runSession(task: string, files: Record<string, string> = {}): Run {
+  return async (store) => {
+    const repo = makeRepo('git@github.com:acme/app1.git', files);
+    const bare = makeRepo();
+    git(repo, 'remote', 'set-url', '--push', 'origin', bare);
+    git(repo, 'add', '-A');
+    git(repo, '-c', 'user.name=eval', '-c', 'user.email=eval@example.com', 'commit', '-qm', 'init', '--allow-empty');
+    const env = { ...process.env, AGENT_MEMORY_DIR: store };
+    delete env.AGENT_MEMORY_DREAM;
+    // sandboxed Bash can't write the temp store, so usage.jsonl would stay empty
+    const settings = JSON.stringify({ sandbox: { filesystem: { allowWrite: [store] } } });
+    const args = ['-p', task, '--plugin-dir', ROOT, '--settings', settings, '--permission-mode', 'bypassPermissions', '--no-session-persistence'];
+    const { stdout } = await promisify(execFile)('claude', args, { cwd: repo, env, maxBuffer: 64 * 1024 * 1024 });
+    return stdout.trim();
+  };
+}
+
+// Runs setup + run (default: dream) + check on TRIALS fresh stores in parallel; passes when at least MIN_PASS checks pass.
+export function trial(name: string, setup: (store: string) => void, check: (store: string, status: string) => void, run: Run = runDream): void {
   it(name, { timeout: 60 * 60_000 }, async () => {
     const results = await Promise.all(
       Array.from({ length: TRIALS }, async () => {
         const store = makeStore();
         setup(store);
-        const status = await runDream(store);
+        const status = await run(store);
         try {
           check(store, status);
           return null;

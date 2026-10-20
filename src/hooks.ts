@@ -12,11 +12,19 @@ function sessionStart(input: HookInput, dir: string): string {
   const cli = `sh "${join(import.meta.dirname, '../bin/agent-memory')}"`;
   return `# Shared agent memory
 
-Topic index for this session (scope → topic — purpose | spec summary):
+Other agents already hit failures in this repo and org and recorded the fixes here. Use them instead of rediscovering them.
+
+You MUST search shared memory:
+1. Before the first build, test, lint, typecheck or format command, e.g. \`${cli} search "test|lint|typecheck|format"\`.
+2. Before git push, deploy or release, e.g. \`${cli} search "push|deploy|release"\`.
+3. After any failed command, before retrying or working around it: search the error text or the tool name.
+4. When a topic below looks related to the task: \`${cli} view <scope>/<topic>.md\` before starting.
+
+Topic index for this session (scope → topic — purpose | spec summary). Summaries are pointers only; the requirements themselves are in the specs:
 ${index(dir, scopes)}
 
 Shared memory is accessed ONLY through this CLI, run with the Bash tool from the session's working directory (there are no agent-memory MCP tools):
-- Search: \`${cli} search "<regex>" [--scope <scope>] [--topic <topic>]\` — case-insensitive regex over requirement blocks in your readable scopes (max 20 hits).
+- Search: \`${cli} search "<regex>" [--scope <scope>] [--topic <topic>]\` — case-insensitive regex over requirement blocks in your readable scopes (max 20 hits). No hits → reword and widen with alternation, e.g. "deploy|release|ship".
 - View: \`${cli} view\` lists topic registries, specs and open changes; \`${cli} view <path>\` reads one, e.g. "org/_topics.md".
 - Propose: pipe JSON on stdin:
   \`\`\`
@@ -26,7 +34,7 @@ Shared memory is accessed ONLY through this CLI, run with the Bash tool from the
   \`\`\`
   Add "new_topic": {"name": "<topic>", "purpose": "...", "boundary": "covers X, not Y"} only when the topic is not registered yet.
 
-Search before relying on assumptions about this codebase or org conventions, then view for full specs. No hits → reword and widen with alternation, e.g. "deploy|release|ship". Hits marked ⚠ DISPUTED must be verified before relying on them; report the outcome via propose.
+Hits marked ⚠ DISPUTED must be verified before relying on them; report the outcome via propose.
 ${TOPIC_RULE}
 Record shared project/org knowledge (conventions, gotchas, commands, corrections) with propose: only what this session discovered through a failure or a user correction, never what you just read in repo docs. Check the scope's _topics.md first.
 - scope: the deepest scope where you observed it; the dream promotes it later.
