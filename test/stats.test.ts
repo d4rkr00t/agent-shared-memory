@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { stats } from '../src/stats.ts';
-import { makeStore, spec, topics } from './helpers.ts';
+import { makeStore, spec, tmp, topics } from './helpers.ts';
 
 const APP = 'repos/github.com/acme/app';
 
@@ -21,6 +21,11 @@ function fixture() {
     'changes/archive/c2/proposal.md': proposal('session', 'Archived: accepted in dream 2026-10-15\n'),
     'changes/archive/c3/proposal.md': proposal('dream', 'Archived: rejected in dream 2026-10-15\n'),
     'changes/archive/c4/proposal.md': proposal('session', 'Archived: expired after 3 runs without converging\n'),
+    'dreams/2026-10-14T00-00-00-000Z.md': '# Dream report\n',
+    'dreams/2026-10-15T00-00-00-000Z.md': '# Dream report\n\n- ACCEPT changes/c2 -> org/git.md: ok\n- REJECT changes/c3: no\n- PENDING changes/c1: wait\n',
+    'inbox/s3.json': '{}',
+    'inbox/processed/s1.json': '{}',
+    'inbox/processed/s2.json': '{}',
     'usage.jsonl': log(
       { session: 's1', event: 'session', source: 'startup' },
       { session: 's1', event: 'session', source: 'compact' },
@@ -51,10 +56,11 @@ describe('stats', () => {
     assert.match(out, /deploy\|ship\s+2\s+█+\n/);
   });
 
-  it('should count retrievals per requirement and list never-retrieved ones', () => {
+  it('should list every topic with requirement, disputed, hit and view counts', () => {
     const out = stats(fixture());
 
-    assert.match(out, /org \/ git \/ Branch names\s+2\s+█+\n\s+repos\/github\.com\/acme\/app \/ testing \/ Runner\s+1\s+█+\n\s+org \/ git \/ Squash\s+0\n/);
+    assert.match(out, /org \/ git\s+2\s+0\s+2\s+0\s+Git\n/);
+    assert.match(out, /repos\/github\.com\/acme\/app \/ testing\s+1\s+0\s+1\s+1\s+Tests\n/);
     assert.match(out, new RegExp(`${APP}/testing\\.md\\s+1\\s+█+\n`));
     assert.match(out, /never retrieved \(1\/3\)\n {2}org \/ git \/ Squash\n/);
   });
@@ -63,6 +69,25 @@ describe('stats', () => {
     const out = stats(fixture());
 
     assert.match(out, /dream\s+0\s+0\s+1\s+0\n\s+session\s+1\s+1\s+0\s+1\n/);
+  });
+
+  it('should list open proposals with scope, topic, source and runs', () => {
+    const out = stats(fixture());
+
+    assert.match(out, /c1\s+org \/ git\s+session\s+0\n/);
+  });
+
+  it('should report dream runs, last report decisions and inbox backlog', () => {
+    const out = stats(fixture());
+
+    assert.match(out, /runs 2 {3}last 2026-10-15T00-00-00-000Z {3}accepted 1 {3}rejected 1 {3}pending 1\n {2}inbox 1 waiting {3}2 processed/);
+  });
+
+  it('should show the initial session message for the cwd scopes', () => {
+    const out = stats(fixture(), tmp());
+
+    assert.match(out, /INITIAL MESSAGE\n {2}scopes org {3}\d+ chars {3}~\d+ tokens\n\n {2}# Shared agent memory\n/);
+    assert.match(out, /\n {2}## org\n {2}- git — Git \| Git rules\n/);
   });
 
   it('should print "none" for empty memory sections', () => {

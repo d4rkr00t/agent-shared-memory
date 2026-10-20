@@ -2,7 +2,8 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { styleText } from 'node:util';
-import { frontmatter, requirements, scopeDirs, storeDir, usageLog } from './store.ts';
+import { startMessage } from './hooks.ts';
+import { frontmatter, parseTopics, requirements, resolveScope, scopeDirs, storeDir, usageLog } from './store.ts';
 
 type Ref = { scope: string; topic: string; requirement: string };
 type Event = { session: string; event: string; error?: string; pattern?: string; total?: number; hits?: Ref[]; path?: string };
@@ -30,7 +31,9 @@ function table(head: string[], rows: Cell[][], bar = -1): string {
   return [
     `  ${head.map((h, i) => styleText('dim', pad(h, i))).join('  ')}`,
     ...rows.map((r) => `  ${r.map(paint).join('  ')}${bar < 0 ? '' : chart(+r[bar])}`),
-  ].join('\n');
+  ]
+    .map((l) => l.trimEnd())
+    .join('\n');
 }
 
 function counts(keys: string[]): Map<string, number> {
@@ -57,7 +60,29 @@ function proposals(dir: string): Cell[][] {
   });
 }
 
-export function stats(dir = storeDir()): string {
+function openProposals(dir: string): Cell[][] {
+  const d = join(dir, 'changes');
+  if (!existsSync(d)) return [];
+  return readdirSync(d)
+    .filter((id) => existsSync(join(d, id, 'proposal.md')))
+    .sort()
+    .map((id) => {
+      const fm = frontmatter(readFileSync(join(d, id, 'proposal.md'), 'utf8'));
+      return [id, `${fm.scope} / ${fm.topic}`, fm.source ?? 'unknown', +(fm.runs ?? 0)];
+    });
+}
+
+function dreams(dir: string): string {
+  const ls = (d: string, ext: string) => (existsSync(join(dir, d)) ? readdirSync(join(dir, d)).filter((f) => f.endsWith(ext)).sort() : []);
+  const reports = ls('dreams', '.md');
+  const last = reports.at(-1);
+  const text = last ? readFileSync(join(dir, 'dreams', last), 'utf8') : '';
+  const n = (k: string) => text.match(new RegExp(`^- ${k} `, 'gm'))?.length ?? 0;
+  return `  runs ${reports.length}   last ${last?.slice(0, -3) ?? 'never'}   accepted ${n('ACCEPT')}   rejected ${n('REJECT')}   pending ${n('PENDING')}
+  inbox ${ls('inbox', '.json').length} waiting   ${ls('inbox/processed', '.json').length} processed`;
+}
+
+export function stats(dir = storeDir(), cwd = process.cwd()): string {
   if (!existsSync(usageLog(dir))) return 'no usage yet';
   const events: Event[] = readFileSync(usageLog(dir), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
   const calls = events.filter((e) => e.event !== 'session');
@@ -73,6 +98,15 @@ export function stats(dir = storeDir()): string {
   const retrieved = counts(searches.flatMap((e) => e.hits ?? []).map(key));
   const views = counts(calls.filter((e) => e.event === 'view' && !e.error && e.path).map((e) => e.path!));
   const reqs = requirements(dir, scopeDirs(dir));
+  const topics = scopeDirs(dir).flatMap((scope) =>
+    parseTopics(dir, scope).map((t) => {
+      const mine = reqs.filter((r) => r.scope === scope && r.topic === t.name);
+      const hits = mine.reduce((n, r) => n + (retrieved.get(key(r)) ?? 0), 0);
+      return [`${scope} / ${t.name}`, mine.length, mine.filter((r) => r.disputed).length, hits, views.get(`${scope}/${t.name}.md`) ?? 0, t.purpose];
+    }),
+  );
+  const { scopes } = resolveScope(cwd);
+  const message = startMessage(dir, scopes);
   const never = reqs.filter((r) => !retrieved.has(key(r)) && !views.has(`${r.scope}/${r.topic}.md`));
 
   return `${section('📈', 'ADOPTION')}
@@ -86,7 +120,7 @@ ${section('🔍', 'SEARCH')}
 ${table(['zero-hit pattern', 'count'], [...counts(zero.map((e) => e.pattern!))].slice(0, 10), 1)}
 
 ${section('🧠', 'MEMORIES')}
-${table(['requirement', 'search hits'], reqs.map((r) => [key(r), retrieved.get(key(r)) ?? 0]).sort((a, b) => +b[1] - +a[1]), 1)}
+${table(['topic', 'reqs', 'disputed', 'hits', 'views', 'purpose'], topics)}
 
 ${table(['spec', 'views'], [...views], 1)}
 
@@ -95,6 +129,16 @@ ${never.map((r) => `  ${key(r)}`).join('\n') || none}
 
 ${section('📝', 'PROPOSALS')}
 ${table(['source', 'open', 'accepted', 'rejected', 'expired'], proposals(dir))}
+
+${table(['open change', 'scope / topic', 'source', 'runs'], openProposals(dir))}
+
+${section('🌙', 'DREAMS')}
+${dreams(dir)}
+
+${section('💬', 'INITIAL MESSAGE')}
+  scopes ${scopes.join(', ')}   ${message.length} chars   ~${Math.round(message.length / 4)} tokens
+
+${message.replace(/^/gm, '  ')}
 `;
 }
 

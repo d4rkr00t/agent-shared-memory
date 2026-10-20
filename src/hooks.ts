@@ -9,6 +9,10 @@ type HookInput = { session_id: string; transcript_path?: string; cwd: string; so
 function sessionStart(input: HookInput, dir: string): string {
   const { scopes } = resolveScope(input.cwd);
   logUsage(dir, { session: input.session_id, event: 'session', source: input.source, scopes });
+  return startMessage(dir, scopes);
+}
+
+export function startMessage(dir: string, scopes: string[]): string {
   const cli = `sh "${join(import.meta.dirname, '../bin/agent-memory')}"`;
   return `# Shared agent memory
 

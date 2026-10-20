@@ -110,7 +110,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 - Gitignored because store `commit` runs `git add -A`. Only new stores get the ignore line (`initStore`); older stores need it added by hand, else raw patterns land in git.
 - The dream reads zero-hit searches from the log (Dream pipeline invariants 11), so the gitignored log is a dream input too, not only stats.
 - Dream sessions don't log: hooks no-op on `AGENT_MEMORY_DREAM`, dream agents get no Bash, so they can't call the CLI.
-- `npm run stats` (`src/stats.ts`): adoption, search zero-hit rate + top zero-hit patterns, per-requirement search hits + per-spec views + never-retrieved list, proposal funnel per `source`. Funnel reads `changes/` + `changes/archive/` (`Archived: accepted|rejected|expired` note), not the log.
+- `npm run stats` (`src/stats.ts`): adoption, search zero-hit rate + top zero-hit patterns, per-topic table (reqs, disputed, search hits, views, purpose) + per-spec views + never-retrieved list, proposal funnel per `source` + open changes (scope/topic, source, runs), dreams (run count, last report ACCEPT/REJECT/PENDING, inbox waiting/processed), and the SessionStart message for the cwd's scopes with its size (`startMessage` in `src/hooks.ts`, shared with the hook so stats never logs a session). Funnel reads `changes/` + `changes/archive/` (`Archived: accepted|rejected|expired` note), not the log.
 - Requirement identity = `scope / topic / requirement name`. Renaming a requirement resets its count. No time filter (add `--since` when log grows).
 - Not measured: whether an agent acted on the SessionStart index without running the CLI.
 
