@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { afterEach, describe, it, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, utimesSync } from 'node:fs';
@@ -33,9 +33,16 @@ const transcript = (home: string, id: string, content: string, mtime?: Date) => 
   if (mtime) utimesSync(path, mtime, mtime);
 };
 
+const logs = () => {
+  const m = mock.method(console, 'error', () => {});
+  return () => m.mock.calls.map((c) => String(c.arguments[0]));
+};
+
 const meta = (store: string, id: string) => JSON.parse(readFileSync(join(store, 'inbox', `${id}.json`), 'utf8'));
 
 describe('pull', () => {
+  afterEach(() => mock.restoreAll());
+
   it('should copy remote transcripts into inbox with repo, scope, user hash and host from remote cwd', () => {
     const home = fakeSsh();
     const repo = makeRepo('git@github.com:acme/mono.git', { '.agent-memory.json': JSON.stringify({ scopes: ['packages/*'] }, null, 2) });
@@ -44,9 +51,11 @@ describe('pull', () => {
     mkdirSync(cwd, { recursive: true });
     transcript(home, 's1', line(cwd, 'use pnpm'));
     const store = makeStore({ 'remotes.json': JSON.stringify({ box: '' }) });
+    const logged = logs();
 
     pull(store);
 
+    assert.ok(logged().includes('[pull] box: 1 sessions'));
     assert.equal(readFileSync(join(store, 'inbox/s1.jsonl'), 'utf8'), line(cwd, 'use pnpm'));
     assert.deepEqual(meta(store, 's1'), {
       session_id: 's1',
@@ -81,9 +90,13 @@ describe('pull', () => {
     const home = fakeSsh();
     transcript(home, 's3', line(tmp(), 'a'));
     const store = makeStore({ 'remotes.json': JSON.stringify({ down: '202501010000.00', box: '' }) });
+    const logged = logs();
 
     pull(store);
 
+    assert.ok(logged().some((l) => l.startsWith('[pull] down failed')));
+    assert.ok(!logged().some((l) => l.startsWith('[pull] down:')));
+    assert.ok(logged().includes('[pull] box: 1 sessions'));
     assert.equal(JSON.parse(readFileSync(join(store, 'remotes.json'), 'utf8')).down, '202501010000.00');
     assert.equal(meta(store, 's3').host, 'box');
   });

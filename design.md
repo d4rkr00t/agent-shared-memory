@@ -78,7 +78,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 - Watermark = remote `date -u +%Y%m%d%H%M.%S`, taken before `find`, so clock skew doesn't matter. Filter = `TZ=UTC touch -t` on a temp ref file + `find -newer`: BSD find rejects ISO `-newermt`.
 - `repo`/`scopes`/`user` are resolved on the remote, one ssh call per host (`RESOLVE` script: realpath, git root, origin, `.agent-memory.json`, email), then fed to the pure `scopeOf` shared with `resolveScope`. Meta adds `host`.
 - Growing sessions get re-pulled whole. Meta `offset` = line count of `inbox/processed/<id>.jsonl` (or the existing unprocessed meta's offset), and `condense` skips those lines.
-- A host failure logs `[pull] <host> failed: …`, keeps its watermark and doesn't stop the other hosts. `AGENT_MEMORY_SSH` overrides the binary (tests use a fake that runs the command locally with a fake `HOME`).
+- A host success logs `[pull] <host>: <n> sessions` (n = transcripts with a `cwd` written to `inbox/`). A host failure logs `[pull] <host> failed: …`, keeps its watermark and doesn't stop the other hosts. `AGENT_MEMORY_SSH` overrides the binary (tests use a fake that runs the command locally with a fake `HOME`).
 
 ## Non-obvious facts
 

@@ -38,9 +38,9 @@ function list(host: string, since: string): [string, string[]] {
   return [now, files.filter(Boolean)];
 }
 
-function pullHost(dir: string, host: string, since: string): string {
+function pullHost(dir: string, host: string, since: string): [string, number] {
   const [now, files] = list(host, since);
-  if (!files.length) return now;
+  if (!files.length) return [now, 0];
   const tmp = mkdtempSync(join(tmpdir(), 'pull-'));
   try {
     execFileSync('tar', ['xf', '-', '-C', tmp], { input: ssh(host, 'cd ~/.claude/projects && tar cf - -T -', files.join('\n') + '\n') });
@@ -70,7 +70,7 @@ function pullHost(dir: string, host: string, since: string): string {
       writeFile(join(dir, 'inbox', `${id}.jsonl`), text);
       writeFile(meta, JSON.stringify({ session_id: id, user, repo, scope: scopes.at(-1), scopes, cwd, host, offset }, null, 2));
     }
-    return now;
+    return [now, sessions.length];
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -83,7 +83,9 @@ export function pull(dir: string): void {
   for (const [host, since] of Object.entries(remotes)) {
     console.error(`[pull] ${new Date().toTimeString().slice(0, 8)} ${host}…`);
     try {
-      remotes[host] = pullHost(dir, host, since);
+      const [now, count] = pullHost(dir, host, since);
+      remotes[host] = now;
+      console.error(`[pull] ${host}: ${count} sessions`);
       writeFile(path, JSON.stringify(remotes, null, 2) + '\n');
     } catch (e) {
       const err = e as Error & { stderr?: Buffer };
