@@ -101,6 +101,15 @@ describe('pull', () => {
     assert.equal(meta(store, 's3').host, 'box');
   });
 
+  it('should log no hosts when remotes.json is missing', () => {
+    const store = makeStore();
+    const logged = logs();
+
+    pull(store);
+
+    assert.deepEqual(logged(), [`[pull] no hosts in ${join(store, 'remotes.json')}`]);
+  });
+
   it('should exit locked without pulling when a dream holds the lock', () => {
     const home = fakeSsh();
     transcript(home, 's4', line(tmp(), 'a'));

@@ -78,8 +78,8 @@ function pullHost(dir: string, host: string, since: string): [string, number] {
 
 export function pull(dir: string): void {
   const path = join(dir, 'remotes.json');
-  if (!existsSync(path)) return;
-  const remotes: Record<string, string> = JSON.parse(readFileSync(path, 'utf8'));
+  const remotes: Record<string, string> = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
+  if (!Object.keys(remotes).length) console.error(`[pull] no hosts in ${path}`);
   for (const [host, since] of Object.entries(remotes)) {
     console.error(`[pull] ${new Date().toTimeString().slice(0, 8)} ${host}…`);
     try {
