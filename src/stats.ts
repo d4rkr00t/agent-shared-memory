@@ -98,16 +98,16 @@ export function stats(dir = storeDir(), cwd = process.cwd()): string {
   const retrieved = counts(searches.flatMap((e) => e.hits ?? []).map(key));
   const views = counts(calls.filter((e) => e.event === 'view' && !e.error && e.path).map((e) => e.path!));
   const reqs = requirements(dir, scopeDirs(dir));
+  const flagged = idle(dir).filter((r) => r.idle >= FLAG_DAYS);
   const topics = scopeDirs(dir).flatMap((scope) =>
     parseTopics(dir, scope).map((t) => {
       const mine = reqs.filter((r) => r.scope === scope && r.topic === t.name);
       const hits = mine.reduce((n, r) => n + (retrieved.get(key(r)) ?? 0), 0);
-      return [`${scope} / ${t.name}`, mine.length, mine.filter((r) => r.disputed).length, hits, views.get(`${scope}/${t.name}.md`) ?? 0, t.purpose];
+      return [`${scope} / ${t.name}`, mine.length, mine.filter((r) => r.disputed).length, flagged.filter((r) => r.scope === scope && r.topic === t.name).length, hits, views.get(`${scope}/${t.name}.md`) ?? 0, t.purpose];
     }),
   );
   const { scopes } = resolveScope(cwd);
   const message = startMessage(dir, scopes);
-  const flagged = idle(dir).filter((r) => r.idle >= FLAG_DAYS);
 
   return `${section('📈', 'ADOPTION')}
   sessions ${sessions}   active ${active} (${rate(active, sessions, (p) => (p >= 50 ? 'green' : p >= 20 ? 'yellow' : 'red'))})   avg calls/active ${avg(calls.length, active)}
@@ -120,7 +120,7 @@ ${section('🔍', 'SEARCH')}
 ${table(['zero-hit pattern', 'count'], [...counts(zero.map((e) => e.pattern!))].slice(0, 10), 1)}
 
 ${section('🧠', 'MEMORIES')}
-${table(['topic', 'reqs', 'disputed', 'hits', 'views', 'purpose'], topics)}
+${table(['topic', 'reqs', 'disputed', 'flagged', 'hits', 'views', 'purpose'], topics)}
 
 ${table(['spec', 'views'], [...views], 1)}
 
