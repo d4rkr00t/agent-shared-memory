@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { styleText } from 'node:util';
 import { startMessage } from './hooks.ts';
-import { frontmatter, parseTopics, requirements, resolveScope, scopeDirs, storeDir, usageLog } from './store.ts';
+import { FLAG_DAYS, frontmatter, idle, parseTopics, REMOVE_DAYS, requirements, resolveScope, scopeDirs, storeDir, usageLog } from './store.ts';
 
 type Ref = { scope: string; topic: string; requirement: string };
 type Event = { session: string; event: string; error?: string; pattern?: string; total?: number; hits?: Ref[]; path?: string };
@@ -107,7 +107,7 @@ export function stats(dir = storeDir(), cwd = process.cwd()): string {
   );
   const { scopes } = resolveScope(cwd);
   const message = startMessage(dir, scopes);
-  const never = reqs.filter((r) => !retrieved.has(key(r)) && !views.has(`${r.scope}/${r.topic}.md`));
+  const flagged = idle(dir).filter((r) => r.idle >= FLAG_DAYS);
 
   return `${section('📈', 'ADOPTION')}
   sessions ${sessions}   active ${active} (${rate(active, sessions, (p) => (p >= 50 ? 'green' : p >= 20 ? 'yellow' : 'red'))})   avg calls/active ${avg(calls.length, active)}
@@ -124,8 +124,8 @@ ${table(['topic', 'reqs', 'disputed', 'hits', 'views', 'purpose'], topics)}
 
 ${table(['spec', 'views'], [...views], 1)}
 
-  ${styleText('dim', `never retrieved (${never.length}/${reqs.length})`)}
-${never.map((r) => `  ${key(r)}`).join('\n') || none}
+  ${styleText('dim', `flagged for cleanup (${flagged.length}/${reqs.length})`)}
+${flagged.map((r) => `  ${key(r)}  idle ${r.idle}/${REMOVE_DAYS}`).join('\n') || none}
 
 ${section('📝', 'PROPOSALS')}
 ${table(['source', 'open', 'accepted', 'rejected', 'expired'], proposals(dir))}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { dream } from '../src/dream.ts';
-import { git, writeFile } from '../src/store.ts';
+import { commit, git, writeFile } from '../src/store.ts';
 import { makeStore, spec, tmp, topics } from './helpers.ts';
 
 const APP = 'repos/github.com/acme/app';
@@ -38,6 +38,11 @@ write('${APP}/_topics.md', ${JSON.stringify(topics(['testing', 'Tests', 'Covers 
 write('${APP}/testing.md', ${JSON.stringify(spec('testing', 'Tests', ['Runner', 'Tests SHALL run with npm test.\nEvidence: s0, s1']))});
 const id = fs.readdirSync(path.join(cwd, 'changes')).find((d) => d.startsWith('c-'));
 write(report, '- ACCEPT changes/' + id + ' -> ${APP}\\n');`;
+
+const usage = (...events: object[]) => events.map((e) => JSON.stringify(e)).join('\n') + '\n';
+const day = (n: number, year = 2099) => new Date(Date.UTC(year, 0, 1 + n)).toISOString();
+const sessionDays = (n: number, scopes: string[], year?: number) =>
+  Array.from({ length: n }, (_, i) => ({ ts: day(i, year), session: `d${i}`, event: 'session', scopes }));
 
 function storeWithInbox() {
   const store = makeStore();
@@ -183,6 +188,66 @@ console.log(t.includes('Bad') ? '- **REJECT changes/c-2: ungrounded**\\nREJECT: 
 
     assert.equal(existsSync(join(store, 'changes/c-1')), false);
     assert.match(readFileSync(join(store, 'changes/archive/c-1/proposal.md'), 'utf8'), /runs: 3[\s\S]*Archived: expired after 3 runs/);
+  });
+
+  it('should remove requirement idle for 60 active days of its scope, keep spec frontmatter, log it', () => {
+    const store = makeStore({ 'org/_topics.md': topics(['git', 'Git', 'Covers git']), 'org/git.md': spec('git', 'Git', ['Old', 'Old SHALL go.']) });
+    writeFile(join(store, 'usage.jsonl'), usage(...sessionDays(60, ['org'])));
+
+    assert.deepEqual(dream(store), { status: 'empty' });
+
+    assert.equal(git(store, 'show', 'main:org/git.md'), '---\ntopic: git\ndescription: Git\nupdated: 2026-10-16\n---');
+    assert.match(readFileSync(join(store, 'dream.log'), 'utf8'), /removed unused org\/git\.md: Old \(idle 60 active days\)\n/);
+    assert.equal(git(store, 'status', '--porcelain'), '');
+  });
+
+  it('should keep requirement whose search hit or spec view is newer than the idle days', () => {
+    const store = makeStore({
+      'org/_topics.md': topics(['git', 'Git', 'Covers git']),
+      'org/git.md': spec('git', 'Git', ['Hit', 'Hit SHALL stay.']),
+      [`${APP}/_topics.md`]: topics(['testing', 'Tests', 'Covers tests']),
+      [`${APP}/testing.md`]: spec('testing', 'Tests', ['Viewed', 'Viewed SHALL stay.']),
+    });
+    writeFile(
+      join(store, 'usage.jsonl'),
+      usage(
+        ...sessionDays(61, ['org', APP]),
+        { ts: day(1), session: 'd1', event: 'search', total: 1, hits: [{ scope: 'org', topic: 'git', requirement: 'Hit' }] },
+        { ts: day(1), session: 'd1', event: 'view', path: `${APP}/testing.md` },
+      ),
+    );
+
+    dream(store);
+
+    assert.match(git(store, 'show', 'main:org/git.md'), /### Requirement: Hit/);
+    assert.match(git(store, 'show', `main:${APP}/testing.md`), /### Requirement: Viewed/);
+  });
+
+  it('should keep requirement whose block was modified (new Evidence commit) after the idle days', () => {
+    process.env.GIT_COMMITTER_DATE = '2020-01-01T00:00:00Z';
+    const store = makeStore({
+      'org/_topics.md': topics(['git', 'Git', 'Covers git']),
+      'org/git.md': spec('git', 'Git', ['Old', 'Old SHALL go.\nEvidence: s0'], ['Confirmed', 'Confirmed SHALL stay.\nEvidence: s0']),
+    });
+    delete process.env.GIT_COMMITTER_DATE;
+    writeFile(join(store, 'org/git.md'), readFileSync(join(store, 'org/git.md'), 'utf8').replace('stay.\nEvidence: s0', 'stay.\nEvidence: s0, s1'));
+    commit(store, 'confirm');
+    writeFile(join(store, 'usage.jsonl'), usage(...sessionDays(60, ['org'], 2021)));
+
+    dream(store);
+
+    const text = git(store, 'show', 'main:org/git.md');
+    assert.doesNotMatch(text, /Requirement: Old/);
+    assert.match(text, /Requirement: Confirmed/);
+  });
+
+  it('should not age requirement on session days outside its scope', () => {
+    const store = makeStore({ [`${APP}/_topics.md`]: topics(['testing', 'Tests', 'Covers tests']), [`${APP}/testing.md`]: spec('testing', 'Tests', ['Runner', 'Runner SHALL stay.']) });
+    writeFile(join(store, 'usage.jsonl'), usage(...sessionDays(60, ['org'])));
+
+    dream(store);
+
+    assert.match(git(store, 'show', `main:${APP}/testing.md`), /### Requirement: Runner/);
   });
 
   it('should exit when another dream holds lock', () => {

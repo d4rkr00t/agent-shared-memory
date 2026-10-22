@@ -187,6 +187,45 @@ export function search(dir: string, scopes: string[], pattern: string, filter: {
 
 export const usageLog = (dir: string) => join(dir, 'usage.jsonl');
 
+export const FLAG_DAYS = 30;
+export const REMOVE_DAYS = 60;
+export type Idle = { scope: string; topic: string; requirement: string; idle: number };
+
+// Idle = distinct days with a session in the requirement's scope since its last search hit, spec view or commit touching its block.
+export function idle(dir: string): Idle[] {
+  const events = read(usageLog(dir)).split('\n').flatMap((l) => {
+    try {
+      return [JSON.parse(l)];
+    } catch {
+      return [];
+    }
+  });
+  const seen = new Map<string, number>();
+  const touch = (k: string, ts: string) => seen.set(k, Math.max(seen.get(k) ?? 0, Date.parse(ts)));
+  for (const e of events.filter((e) => !e.error)) {
+    if (e.event === 'search') for (const h of e.hits ?? []) touch(`${h.scope}/${h.topic}/${h.requirement}`, e.ts);
+    if (e.event === 'view' && e.path) touch(e.path, e.ts);
+  }
+  const sessions = events.filter((e) => e.event === 'session');
+  const out: (Idle & { last: number })[] = [];
+  for (const scope of scopeDirs(dir)) {
+    for (const topic of specFiles(dir, scope)) {
+      const path = `${scope}/${topic}.md`;
+      const times = [...(tryGit(dir, 'blame', '--line-porcelain', '--', path) ?? '').matchAll(/^committer-time (\d+)$/gm)].map((m) => +m[1] * 1000);
+      read(join(dir, path)).split('\n').forEach((line, i) => {
+        const name = line.match(/^### Requirement: (.*)/)?.[1].trim();
+        if (name) out.push({ scope, topic, requirement: name, idle: 0, last: Math.max(seen.get(path) ?? 0, seen.get(`${scope}/${topic}/${name}`) ?? 0) });
+        const cur = out.at(-1);
+        if (cur?.scope === scope && cur.topic === topic) cur.last = Math.max(cur.last, times.length ? (times[i] ?? 0) : Infinity);
+      });
+    }
+  }
+  return out.map(({ last, ...r }) => ({
+    ...r,
+    idle: new Set(sessions.filter((s) => s.scopes?.includes(r.scope) && Date.parse(s.ts) > last).map((s) => s.ts.slice(0, 10))).size,
+  }));
+}
+
 // metrics are best-effort: a read-only store (sandboxed Bash) must not break search/view
 export function logUsage(dir: string, event: Record<string, unknown>): void {
   try {

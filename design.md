@@ -15,10 +15,10 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 
 | File | Role |
 |---|---|
-| `src/store.ts` | store init, scope resolve, topic registry parse, index, `requirements` + grep search, view, propose, locks, `checkTopics`, `logUsage` |
+| `src/store.ts` | store init, scope resolve, topic registry parse, index, `requirements` + grep search, view, propose, locks, `checkTopics`, `logUsage`, `idle` |
 | `src/cli.ts`, `bin/agent-memory` | Bash CLI: `search`, `view`, `propose`; logs each call to `usage.jsonl`. `bin/` wrapper fixes node env for the Bash sandbox |
 | `src/hooks.ts` | `session-start` (inject index, log `session` event), `session-end` (copy transcript to `inbox/`) |
-| `src/dream.ts` | dream CLI: condense, 3 passes, archive, expire, merge |
+| `src/dream.ts` | dream CLI: unused cleanup, condense, 3 passes, archive, expire, merge |
 | `src/pull.ts` | `npm run pull`: copy new transcripts from SSH devboxes in `remotes.json` into `inbox/` |
 | `src/stats.ts` | `npm run stats`: aggregates `usage.jsonl` + `changes/` into markdown |
 | `src/prompts.ts` | PROPOSE / CONVERGE / VERIFY prompts, `{{VAR}}` placeholders via `fill` |
@@ -68,6 +68,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 9. Each `claude -p` pass logs `[dream] HH:MM:SS pass: <name>…` to stderr. Passes take minutes; no output between them is normal.
 10. Dream `claude -p` calls: `--tools` whitelist, `acceptEdits`, `--no-session-persistence`, `--strict-mcp-config`, env `AGENT_MEMORY_DREAM=1` → hooks no-op (else dream transcripts feed inbox = loop).
 11. Search misses: `misses()` in `src/dream.ts` takes zero-hit `search` events from `usage.jsonl` newer than the newest `dreams/<ts>.md` on main (rejected runs write no report, so their misses are fed again), joins each with its session's `scopes`, writes `<work>/misses.md`. Misses alone start a run. Propose gets `--add-dir <work>` (sessions + misses). Propose turns misses on requirements that already exist into `source: misses` changes: rename/split/merge topics, rewrite Purpose/Boundary/description, move requirements, add the missed terms. Rule meaning and `Evidence:` never change, level rules don't apply, ACCEPT needs misses from 2+ sessions (else PENDING) (`MISSES` block in `src/prompts.ts`, shared by all 3 passes). Misses that no requirement covers are skipped; new knowledge comes only from transcripts.
+12. Unused cleanup: `idle()` in `src/store.ts` counts, per requirement, distinct days with a `session` event whose `scopes` include its scope, after its last retrieval. Retrieval = `search` hit, `view` of its spec, or newest `git blame` commit of any block line (creation, merged confirmation or rewrite). Open proposals don't count. Idle ≥30 → flagged in stats; idle ≥60 → `cleanup()` in `src/dream.ts` removes the block on main (`commit` lock, `dream: remove unused requirements`, line in `dream.log`) at the start of every run, even an empty one. Nothing is stored; a retrieval restores. Spec left without requirements keeps its frontmatter, so file + registry entry stay and `checkTopics` passes. Active days, not calendar days, so an unopened repo keeps its memories (user). Renaming or moving a requirement resets its clock. Undo = `git revert`.
 
 ## Remote pull
 
@@ -110,7 +111,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 - Gitignored because store `commit` runs `git add -A`. Only new stores get the ignore line (`initStore`); older stores need it added by hand, else raw patterns land in git.
 - The dream reads zero-hit searches from the log (Dream pipeline invariants 11), so the gitignored log is a dream input too, not only stats.
 - Dream sessions don't log: hooks no-op on `AGENT_MEMORY_DREAM`, dream agents get no Bash, so they can't call the CLI.
-- `npm run stats` (`src/stats.ts`): adoption, search zero-hit rate + top zero-hit patterns, per-topic table (reqs, disputed, search hits, views, purpose) + per-spec views + never-retrieved list, proposal funnel per `source` + open changes (scope/topic, source, runs), dreams (run count, last report ACCEPT/REJECT/PENDING, inbox waiting/processed), and the SessionStart message for the cwd's scopes with its size (`startMessage` in `src/hooks.ts`, shared with the hook so stats never logs a session). Funnel reads `changes/` + `changes/archive/` (`Archived: accepted|rejected|expired` note), not the log.
+- `npm run stats` (`src/stats.ts`): adoption, search zero-hit rate + top zero-hit patterns, per-topic table (reqs, disputed, search hits, views, purpose) + per-spec views + flagged-for-cleanup list (idle ≥30 active days, `idle N/60`), proposal funnel per `source` + open changes (scope/topic, source, runs), dreams (run count, last report ACCEPT/REJECT/PENDING, inbox waiting/processed), and the SessionStart message for the cwd's scopes with its size (`startMessage` in `src/hooks.ts`, shared with the hook so stats never logs a session). Funnel reads `changes/` + `changes/archive/` (`Archived: accepted|rejected|expired` note), not the log.
 - Requirement identity = `scope / topic / requirement name`. Renaming a requirement resets its count. No time filter (add `--since` when log grows).
 - Not measured: whether an agent acted on the SessionStart index without running the CLI.
 
@@ -130,7 +131,6 @@ Two real sessions in `acme/app1` + `acme/app2` → dream merged `org/gotchas.md`
 ## Not built (add when)
 
 - Ranked search (FTS5) → grep misses/floods on real store; embeddings after.
-- Confirmation dates, decay sweep → unused memories pile up (`npm run stats` lists never-retrieved ones).
 - Per-session proposer fan-out → inbox outgrows one context.
 - Auth, remote store, transcript redaction → leaving localhost. Remote pull copies raw transcripts too.
 - Remote read side (index, propose on devboxes), teammates' machines, cloud sessions → remote sessions need memory, or need sharing beyond one user.

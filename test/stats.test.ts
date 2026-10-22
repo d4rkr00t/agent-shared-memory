@@ -62,7 +62,19 @@ describe('stats', () => {
     assert.match(out, /org \/ git\s+2\s+0\s+2\s+0\s+Git\n/);
     assert.match(out, /repos\/github\.com\/acme\/app \/ testing\s+1\s+0\s+1\s+1\s+Tests\n/);
     assert.match(out, new RegExp(`${APP}/testing\\.md\\s+1\\s+█+\n`));
-    assert.match(out, /never retrieved \(1\/3\)\n {2}org \/ git \/ Squash\n/);
+  });
+
+  it('should list requirements idle 30+ active days as flagged with idle count', () => {
+    const days = Array.from({ length: 30 }, (_, i) => ({ ts: new Date(Date.UTC(2099, 0, 1 + i)).toISOString(), session: `d${i}`, event: 'session', scopes: ['org'] }));
+    const store = makeStore({
+      'org/_topics.md': topics(['git', 'Git', 'Covers git']),
+      'org/git.md': spec('git', 'Git rules', ['Squash', 'PRs SHOULD squash.']),
+      [`${APP}/_topics.md`]: topics(['testing', 'Tests', 'Covers tests']),
+      [`${APP}/testing.md`]: spec('testing', 'Test rules', ['Runner', 'Tests SHALL run with npm test.']),
+      'usage.jsonl': days.map((e) => JSON.stringify(e)).join('\n') + '\n',
+    });
+
+    assert.match(stats(store), /flagged for cleanup \(1\/2\)\n {2}org \/ git \/ Squash {2}idle 30\/60\n\n/);
   });
 
   it('should report proposal funnel per source from changes and archive', () => {
@@ -93,7 +105,7 @@ describe('stats', () => {
   it('should print "none" for empty memory sections', () => {
     const out = stats(makeStore({ 'usage.jsonl': log({ session: 's1', event: 'session', source: 'startup' }) }));
 
-    assert.match(out, /MEMORIES\n {2}none\n\n {2}none\n\n {2}never retrieved \(0\/0\)\n {2}none\n/);
+    assert.match(out, /MEMORIES\n {2}none\n\n {2}none\n\n {2}flagged for cleanup \(0\/0\)\n {2}none\n/);
   });
 
   it('should print "no usage yet" without log', () => {

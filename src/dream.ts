@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkTopics, commit, frontmatter, git, initStore, storeDir, usageLog, withLock, writeFile } from './store.ts';
+import { checkTopics, commit, frontmatter, git, idle, initStore, REMOVE_DAYS, storeDir, usageLog, withLock, writeFile } from './store.ts';
 import { CONVERGE, fill, PROPOSE, VERIFY } from './prompts.ts';
 
 export type DreamResult = { status: 'locked' | 'empty' | 'merged' | 'rejected'; reason?: string };
@@ -85,6 +85,22 @@ function bumpRuns(dir: string): void {
   commit(dir, 'dream: bump runs, expire stale changes');
 }
 
+function cleanup(dir: string, ts: string): void {
+  const stale = idle(dir).filter((r) => r.idle >= REMOVE_DAYS);
+  if (!stale.length) return;
+  withLock(dir, 'commit', () => {
+    for (const r of stale) {
+      const path = join(dir, r.scope, `${r.topic}.md`);
+      const blocks = readFileSync(path, 'utf8').split(/^(?=### Requirement: )/m);
+      writeFile(path, blocks.filter((b) => b.match(/^### Requirement: (.*)/)?.[1].trim() !== r.requirement).join(''));
+      const line = `${ts} removed unused ${r.scope}/${r.topic}.md: ${r.requirement} (idle ${r.idle} active days)`;
+      console.error(`[dream] ${line}`);
+      appendFileSync(join(dir, 'dream.log'), line + '\n');
+    }
+    commit(dir, 'dream: remove unused requirements');
+  });
+}
+
 // Zero-hit searches since the newest dream report on main, one line each, with the session's readable scopes.
 function misses(dir: string): string[] {
   if (!existsSync(usageLog(dir))) return [];
@@ -120,9 +136,10 @@ function run(dir: string): DreamResult {
   const inbox = join(dir, 'inbox');
   const metas = existsSync(inbox) ? readdirSync(inbox).filter((f) => f.endsWith('.json')) : [];
   const missed = misses(dir);
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  cleanup(dir, ts);
   if (!metas.length && !openChanges(dir).length && !missed.length) return { status: 'empty' };
 
-  const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const work = mkdtempSync(join(tmpdir(), 'dream-'));
   const sessions = join(work, 'sessions');
   const tree = join(work, 'tree');
