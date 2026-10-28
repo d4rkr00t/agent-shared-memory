@@ -25,7 +25,7 @@ A requirement is one rule an agent can act on at a decision point:
 - SHALL only when breaking the rule was observed to fail (error, broken build, failed CI). SHOULD for conventions.
 - Name: short imperative phrase, stable, unique in its scope. It is the identity for MODIFIED/REMOVED and usage stats.
 - Grounded: every clause traces to a quoted transcript line. Drop clauses no session shows, even if you believe them.
-- Evidence strength: user correction > TOOL ERROR followed by a different command that worked > anything else. The assistant's own claims, plans or summaries are not evidence.
+- Evidence strength: user correction > TOOL ERROR (or a doom loop) followed by a different command that worked > anything else. The assistant's own claims, plans or summaries are not evidence.
 - Shared, not personal: rules about the repo, tooling, CI or environment can be shared. Rules about how the agent talks, formats, plans or works with a user (tone, verbosity, workflow habits) are personal preferences: REJECT them, they belong in that user's built-in memory.
 - Never store: secrets, credentials, tokens, personal data, one-off task details, transient failures (network, flaky runs), typos, machine-specific paths (write ~ instead of /Users/<name>), anything obvious from reading the code, anything from the repo's CLAUDE.md or AGENTS.md (already loaded in every session). Other repo docs only when a transcript shows an agent missed them; then point to the doc path instead of copying it.
 
@@ -70,7 +70,7 @@ Count only the sessions in a requirement's own Evidence line.
 - Evidence from sessions in 2 or more different repos → org/. Sessions with "repo: null" never count as a repo.
 - Evidence from 2 or more different subfolder scopes of one repo → that repo's root scope
 - Otherwise → the deepest scope shared by all evidence sessions
-- Evidence from only 1 session → ACCEPT at that session's scope only if the evidence is strong: a TOOL ERROR followed by a fix that worked, or a user correction about the repo, tooling, CI or environment with a fact behind it in the transcript (an error, a config file, a command output). Otherwise PENDING. Contradictions: see below.
+- Evidence from only 1 session → ACCEPT at that session's scope only if the evidence is strong: a TOOL ERROR (or a doom loop) followed by a fix that worked, or a user correction about the repo, tooling, CI or environment with a fact behind it in the transcript (an error, a config file, a command output). Otherwise PENDING. Contradictions: see below.
 - A convention with no observed failure behind it (style, naming, structure) needs corrections from 2 or more distinct users (session header "user:"; "unknown" never counts). One user's taste → REJECT as personal preference.
 - Conflict between scopes: the deeper scope wins; mark its requirement "Overrides: <shallower scope>/<topic>: <name>".
 - New evidence can widen or narrow an existing requirement's reach: promote it to a higher scope or demote it to a lower one (remove it from the old spec, add it to the new one)`;
@@ -102,6 +102,7 @@ Before writing anything, read _topics.md and every spec of each scope these sess
 Task: read ALL transcripts together and find knowledge that future agents need and do not have yet. Look for patterns ACROSS sessions first. Signals, strongest first:
 - user corrections ("no, use X", "don't do Y")
 - a TOOL ERROR followed by a different command that worked
+- a doom loop: the same tool called 3+ times in a row with the same or near-same input, usually each followed by TOOL ERROR. The rule is what broke the loop (a different command that worked, or a user correction). A loop never broken shows nothing that works: skip it.
 - the same mistake or retry loop in several sessions
 - explicit user instructions to always or never do something (apply the shared-vs-personal test)
 - an existing requirement that was followed and failed (contradiction)

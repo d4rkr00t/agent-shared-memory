@@ -49,7 +49,8 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 - evidence ≥2 repos → `org/` (`repo: null` sessions don't count)
 - evidence ≥2 subfolders of one repo → repo root
 - else deepest shared scope
-- 1 session → ACCEPT only on strong evidence (TOOL ERROR → fix, or user correction about repo/tooling/env backed by a fact in the transcript); else PENDING
+- 1 session → ACCEPT only on strong evidence (TOOL ERROR → fix, doom loop → fix, or user correction about repo/tooling/env backed by a fact in the transcript); else PENDING
+- doom loop (PROPOSE signal, prompt only, `condense()` untouched) = same tool 3+ times in a row, same/near-same input. Rule = what broke it; unbroken loop → nothing. Framework scoping (e.g. org/nextjs from 1 repo) skipped: 2nd repo promotes it (user, 2026-10-28)
 - taste convention with no observed failure → needs ≥2 distinct `user` hashes, else REJECT as personal
 - deeper scope overrides shallower (`Overrides:` line)
 - contradiction: 1 session → `Status: disputed` + `Disputed-by`; ≥2 → rewrite/remove; later confirmation clears dispute
@@ -97,7 +98,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 - `npm run eval` (`evals/*.eval.ts`): real `claude -p` dream runs on fixture stores, graded by asserts on the merged store. Separate from `npm test`, which fakes `claude`. Run with sandbox off; `AGENT_MEMORY_CLAUDE` is ignored.
 - Each case = `trial(name, setup, check)` in `evals/helpers.ts`: `EVAL_TRIALS` (default 3) fresh stores dream in parallel (`node src/dream.ts` with `AGENT_MEMORY_DIR`), pass at ≥ `EVAL_MIN_PASS` (default 2).
 - Fixtures: `session(store, id, { repo, user, turns })` writes inbox jsonl + meta like the SessionEnd hook. Turns: `user`, `assistant`, `tool` (tool_use), `error` (tool_result `is_error`).
-- Cases: level rules, rejections (personal pref, secret), contradictions, topic placement + confirmation dedupe, search misses (`miss()` writes usage events; 2 sessions → missed patterns hit, 1 → specs untouched). Negative cases accept any dream status; positive ones require `merged`.
+- Cases: level rules, rejections (personal pref, secret), contradictions, doom loops (fixed → stored, unbroken → nothing), topic placement + confirmation dedupe, search misses (`miss()` writes usage events; 2 sessions → missed patterns hit, 1 → specs untouched). Negative cases accept any dream status; positive ones require `merged`.
 - Session evals (`evals/search.eval.ts`): `trial(..., run)` with `runSession(task, files)` instead of dream. Real `claude -p --plugin-dir <repo>` in a temp `acme/app1` repo (push goes to a local bare repo), store via `AGENT_MEMORY_DIR`. Pass = `usage.jsonl` shows the planted requirement in `search` hits or a `view` of its spec. Cases: before tests, before push, after a failed command.
 - Cost: 3 `claude -p` passes per trial, minutes each. Dream sessions load the runner's global CLAUDE.md, so results depend on whose machine runs them.
 
