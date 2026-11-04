@@ -11,9 +11,23 @@ export type DreamResult = { status: 'locked' | 'empty' | 'merged' | 'rejected'; 
 const MAX_RUNS = 3;
 const MAX_ATTEMPTS = 3;
 
-function condense(jsonl: string, offset = 0): string {
+export function condense(jsonl: string, offset = 0): string {
   const out: string[] = [];
+  const calls = new Map<string, string>();
   const clip = (s: string, n = 2000) => (s.length > n ? s.slice(0, n) + ' …' : s);
+  const text = (content: unknown): string[] => {
+    const blocks = typeof content === 'string' ? [{ type: 'text', text: content }] : Array.isArray(content) ? content : [];
+    return blocks
+      .filter((b): b is { type: string; text: string } =>
+        !!b && typeof b === 'object' && ['text', 'input_text', 'output_text'].includes((b as any).type) && typeof (b as any).text === 'string',
+      )
+      .map((b) => b.text.trim())
+      .filter(Boolean);
+  };
+  const failed = (output: string) => {
+    const exit = output.match(/Process exited with code (\d+)/);
+    return (exit ? exit[1] !== '0' : false) || /(?:^|\n)(?:error|failed):/i.test(output);
+  };
   for (const line of jsonl.split('\n').slice(offset)) {
     let e;
     try {
@@ -21,16 +35,33 @@ function condense(jsonl: string, offset = 0): string {
     } catch {
       continue;
     }
-    if (e.type !== 'user' && e.type !== 'assistant') continue;
-    const content = e.message?.content;
-    const blocks = typeof content === 'string' ? [{ type: 'text', text: content }] : (content ?? []);
-    for (const b of blocks) {
-      if (b.type === 'text' && b.text?.trim()) out.push(`${e.type.toUpperCase()}: ${clip(b.text.trim())}`);
-      else if (b.type === 'tool_use') out.push(`TOOL ${b.name}: ${clip(JSON.stringify(b.input), 300)}`);
-      else if (b.type === 'tool_result' && b.is_error) {
-        const t = typeof b.content === 'string' ? b.content : JSON.stringify(b.content);
-        out.push(`TOOL ERROR: ${clip(t, 800)}`);
+    // Claude Code transcript.
+    if (e.type === 'user' || e.type === 'assistant') {
+      const content = e.message?.content;
+      for (const t of text(content)) out.push(`${e.type.toUpperCase()}: ${clip(t)}`);
+      const blocks = Array.isArray(content) ? content : [];
+      for (const b of blocks) {
+        if (b.type === 'tool_use') out.push(`TOOL ${b.name}: ${clip(JSON.stringify(b.input), 300)}`);
+        else if (b.type === 'tool_result' && b.is_error) {
+          const t = typeof b.content === 'string' ? b.content : JSON.stringify(b.content);
+          out.push(`TOOL ERROR: ${clip(t, 800)}`);
+        }
       }
+      continue;
+    }
+
+    // Codex rollout. Ignore event_msg copies so messages are not duplicated.
+    if (e.type !== 'response_item') continue;
+    const p = e.payload ?? {};
+    if (p.type === 'message' && (p.role === 'user' || p.role === 'assistant')) {
+      for (const t of text(p.content)) out.push(`${p.role.toUpperCase()}: ${clip(t)}`);
+    } else if (p.type === 'function_call' || p.type === 'custom_tool_call') {
+      const input = p.arguments ?? p.input ?? '';
+      calls.set(p.call_id, p.name);
+      out.push(`TOOL ${p.name}: ${clip(typeof input === 'string' ? input : JSON.stringify(input), 300)}`);
+    } else if (p.type === 'function_call_output' || p.type === 'custom_tool_call_output') {
+      const output = typeof p.output === 'string' ? p.output : JSON.stringify(p.output);
+      if (failed(output)) out.push(`TOOL ERROR${calls.get(p.call_id) ? ` ${calls.get(p.call_id)}` : ''}: ${clip(output, 800)}`);
     }
   }
   return out.join('\n');

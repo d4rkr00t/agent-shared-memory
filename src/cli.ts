@@ -52,7 +52,8 @@ if (import.meta.main) {
     console.log(USAGE);
     process.exit(0);
   }
-  const t = tools(process.cwd(), storeDir(), process.env.CLAUDE_CODE_SESSION_ID ?? 'unknown');
+  const sessionId = process.env.CODEX_THREAD_ID ?? process.env.CLAUDE_CODE_SESSION_ID ?? 'unknown';
+  const t = tools(process.cwd(), storeDir(), sessionId);
   try {
     if (cmd === 'search' && arg) console.log(t.search({ pattern: arg, scope: values.scope, topic: values.topic }));
     else if (cmd === 'view') console.log(t.view({ path: arg }));

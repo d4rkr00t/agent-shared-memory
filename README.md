@@ -10,7 +10,7 @@ Idea: Lamis Mukta, ["Learning while you sleep: Beyond memory to dreaming"](https
 
 ## Install
 
-Requires Node ≥ 24, git, Claude Code. No runtime dependencies.
+Requires Node ≥ 24 and git. Live sessions can use Claude Code or Codex; dreaming still requires Claude Code. No runtime dependencies.
 
 Try it for one session:
 
@@ -25,7 +25,16 @@ Install for every session (inside an interactive `claude`):
 /plugin install agent-memory@agent-memory-local
 ```
 
-The plugin adds:
+For Codex, add the same local marketplace and install the plugin:
+
+```bash
+codex plugin marketplace add /path/to/agentic-distributed-memory
+codex plugin add agent-memory@agent-memory-local
+```
+
+Review and trust the plugin hooks when Codex prompts. For `propose`, add `~/.agent-memory` to Codex's `sandbox_workspace_write.writable_roots`.
+
+The plugin adds in both agents:
 - `SessionStart` hook: injects the topic index for the session's scopes and the CLI commands below
 - `SessionEnd` hook: copies the transcript to the store's `inbox/`
 - CLI `bin/agent-memory` (wraps `src/cli.ts`), which agents run through the Bash tool. There is no MCP server.

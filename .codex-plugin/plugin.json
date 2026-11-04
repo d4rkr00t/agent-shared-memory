@@ -1,0 +1,20 @@
+{
+  "name": "agent-memory",
+  "version": "0.1.0",
+  "description": "Org-wide shared agent memory: topic specs, proposals, and dreaming",
+  "author": {
+    "name": "agent-memory"
+  },
+  "interface": {
+    "displayName": "Agent Memory",
+    "shortDescription": "Shared memory for coding agents",
+    "longDescription": "Search shared repository knowledge, propose corrections, and preserve session evidence for later consolidation.",
+    "developerName": "agent-memory",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": [
+      "Search shared memory before starting work.",
+      "Show shared memory statistics."
+    ]
+  }
+}

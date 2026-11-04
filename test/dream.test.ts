@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { dream } from '../src/dream.ts';
+import { condense, dream } from '../src/dream.ts';
 import { commit, git, writeFile } from '../src/store.ts';
 import { makeStore, spec, tmp, topics } from './helpers.ts';
 
@@ -52,6 +52,30 @@ function storeWithInbox() {
 }
 
 describe('dream', () => {
+  it('should condense Claude and Codex transcripts to the same evidence format', () => {
+    const claude = [
+      { type: 'user', message: { content: 'run tests' } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Trying that.' }, { type: 'tool_use', name: 'Bash', input: { command: 'npm test' } }] } },
+      { type: 'user', message: { content: [{ type: 'tool_result', is_error: true, content: 'tests failed' }] } },
+    ];
+    const codex = [
+      { type: 'response_item', payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'hidden instructions' }] } },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'run tests' }] } },
+      { type: 'event_msg', payload: { type: 'user_message', message: 'duplicate' } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Trying that.' }] } },
+      { type: 'response_item', payload: { type: 'function_call', call_id: 'c1', name: 'exec_command', arguments: '{"cmd":"npm test"}' } },
+      { type: 'response_item', payload: { type: 'function_call_output', call_id: 'c1', output: 'Process exited with code 1\ntests failed' } },
+      { type: 'response_item', payload: { type: 'function_call', call_id: 'c2', name: 'exec_command', arguments: '{"cmd":"pwd"}' } },
+      { type: 'response_item', payload: { type: 'function_call_output', call_id: 'c2', output: 'Process exited with code 0\n/tmp' } },
+    ];
+
+    assert.equal(condense(claude.map(JSON.stringify).join('\n')), 'USER: run tests\nASSISTANT: Trying that.\nTOOL Bash: {"command":"npm test"}\nTOOL ERROR: tests failed');
+    assert.equal(
+      condense(codex.map(JSON.stringify).join('\n')),
+      'USER: run tests\nASSISTANT: Trying that.\nTOOL exec_command: {"cmd":"npm test"}\nTOOL ERROR exec_command: Process exited with code 1\ntests failed\nTOOL exec_command: {"cmd":"pwd"}',
+    );
+  });
+
   it('should commit pass-1 changes to main and move transcripts to processed', () => {
     const store = storeWithInbox();
     fakeClaude({

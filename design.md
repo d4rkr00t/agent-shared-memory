@@ -22,7 +22,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 | `src/pull.ts` | `npm run pull`: copy new transcripts from SSH devboxes in `remotes.json` into `inbox/` |
 | `src/stats.ts` | `npm run stats`: aggregates `usage.jsonl` + `changes/` into markdown |
 | `src/prompts.ts` | PROPOSE / CONVERGE / VERIFY prompts, `{{VAR}}` placeholders via `fill` |
-| `.claude-plugin/`, `hooks/hooks.json` | Claude Code plugin (hooks only, no MCP) + local marketplace |
+| `.claude-plugin/`, `.codex-plugin/`, `hooks/hooks.json` | Claude Code + Codex plugin manifests, shared hooks (no MCP), local marketplace |
 | `test/*.test.ts` | integration tests: temp stores, real git, fake `claude`. `tools.test.ts` calls `tools()` directly, `cli.test.ts` spawns the CLI |
 | `evals/*.eval.ts` | prompt evals: real `claude` dream runs on fixture stores, N trials, see Evals |
 
@@ -84,7 +84,7 @@ Goal: org-wide shared memory for coding agents. Prototype, local only. Origin: L
 
 ## Non-obvious facts
 
-- CLI session id = env `CLAUDE_CODE_SESSION_ID`, set in Claude Code's Bash tool (same id hooks receive).
+- CLI session id = env `CODEX_THREAD_ID` in Codex or `CLAUDE_CODE_SESSION_ID` in Claude Code (same id hooks receive).
 - No hash/CAS concurrency (talk's approach) — unnecessary because live writes are append-only proposals.
 - Search = regex grep, requirement-block granularity, cap 20 + total. Chosen over BM25/embeddings by user. Upgrade path: built-in `node:sqlite` FTS5 (verified on Node 24, zero deps).
 - `AGENT_MEMORY_DIR` affects only this tool; Claude Code built-in memory untouched. SessionStart tells agents: shared knowledge → `propose`, built-in memory → personal prefs only.

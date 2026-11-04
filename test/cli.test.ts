@@ -1,17 +1,32 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { makeRepo, makeStore, spec, topics } from './helpers.ts';
 
 const APP = 'repos/github.com/acme/app';
 const CLI = resolve('src/cli.ts');
 
-const cli = (store: string, cwd: string, args: string[], input = '') =>
-  execFileSync('node', [CLI, ...args], { cwd, input, encoding: 'utf8', env: { ...process.env, AGENT_MEMORY_DIR: store, CLAUDE_CODE_SESSION_ID: 's1' } });
+const cli = (store: string, cwd: string, args: string[], input = '', codexThreadId?: string) =>
+  execFileSync('node', [CLI, ...args], {
+    cwd,
+    input,
+    encoding: 'utf8',
+    env: { ...process.env, CODEX_THREAD_ID: codexThreadId, AGENT_MEMORY_DIR: store, CLAUDE_CODE_SESSION_ID: 's1' },
+  });
 
 describe('cli', () => {
+  it('should attribute proposals to the Codex thread id when present', () => {
+    const store = makeStore({ [`${APP}/_topics.md`]: topics(['testing', 'How tests run', 'Covers tests']) });
+    const repo = makeRepo('git@github.com:acme/app.git');
+    const delta = '## ADDED Requirements\n### Requirement: Watch\nTests SHOULD use --watch locally.';
+    const out = cli(store, repo, ['propose'], JSON.stringify({ scope: APP, topic: 'testing', delta, why: 'observed' }), 'thr_codex');
+    const id = out.match(/changes\/(\S+)\./)![1];
+
+    assert.match(readFileSync(join(store, 'changes', id, 'proposal.md'), 'utf8'), /^sessions: thr_codex$/m);
+  });
+
   it('should search, view and propose within the cwd scopes', () => {
     const store = makeStore({
       [`${APP}/_topics.md`]: topics(['testing', 'How tests run', 'Covers runner, not CI']),
