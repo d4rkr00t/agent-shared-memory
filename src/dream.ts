@@ -67,8 +67,12 @@ export function condense(jsonl: string, offset = 0): string {
   return out.join('\n');
 }
 
+const say = (msg: string) => console.error(`[dream] ${msg}`);
+const plural = (n: number, w: string, many = `${w}s`) => `${n} ${n === 1 ? w : many}`;
+const short = (s: string, n = 220) => (s.length > n ? s.slice(0, n) + '…' : s);
+
 function claude(cwd: string, prompt: string, tools: string, addDir: string): string {
-  console.error(`[dream] ${new Date().toTimeString().slice(0, 8)} ${prompt.split('\n')[0].replace('PASS: ', 'pass: ')}…`);
+  say(`${new Date().toTimeString().slice(0, 8)} ${prompt.split('\n')[0].replace('PASS: ', 'pass: ')}…`);
   return execFileSync(
     process.env.AGENT_MEMORY_CLAUDE ?? 'claude',
     ['-p', prompt, '--tools', tools, '--permission-mode', 'acceptEdits', '--add-dir', addDir, '--no-session-persistence', '--strict-mcp-config'],
@@ -111,7 +115,10 @@ function bumpRuns(dir: string): void {
     const text = readFileSync(path, 'utf8');
     const runs = Number(frontmatter(text).runs ?? 0) + 1;
     writeFile(path, text.replace(/^runs: .*$/m, `runs: ${runs}`));
-    if (runs >= MAX_RUNS) archive(dir, id, `expired after ${runs} runs without converging`);
+    if (runs >= MAX_RUNS) {
+      archive(dir, id, `expired after ${runs} runs without converging`);
+      say(`expired changes/${id} (${runs} runs without converging)`);
+    } else say(`still open changes/${id} (run ${runs}/${MAX_RUNS})`);
   }
   commit(dir, 'dream: bump runs, expire stale changes');
 }
@@ -125,7 +132,7 @@ function cleanup(dir: string, ts: string): void {
       const blocks = readFileSync(path, 'utf8').split(/^(?=### Requirement: )/m);
       writeFile(path, blocks.filter((b) => b.match(/^### Requirement: (.*)/)?.[1].trim() !== r.requirement).join(''));
       const line = `${ts} removed unused ${r.scope}/${r.topic}.md: ${r.requirement} (idle ${r.idle} active days)`;
-      console.error(`[dream] ${line}`);
+      say(line);
       appendFileSync(join(dir, 'dream.log'), line + '\n');
     }
     commit(dir, 'dream: remove unused requirements');
@@ -169,7 +176,11 @@ function run(dir: string): DreamResult {
   const missed = misses(dir);
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   cleanup(dir, ts);
-  if (!metas.length && !openChanges(dir).length && !missed.length) return { status: 'empty' };
+  say(`${plural(metas.length, 'session')} in inbox, ${plural(missed.length, 'zero-hit search', 'zero-hit searches')}, ${plural(openChanges(dir).length, 'open change')}`);
+  if (!metas.length && !openChanges(dir).length && !missed.length) {
+    say('nothing to do');
+    return { status: 'empty' };
+  }
 
   const work = mkdtempSync(join(tmpdir(), 'dream-'));
   const sessions = join(work, 'sessions');
@@ -185,14 +196,18 @@ function run(dir: string): DreamResult {
     const jsonl = join(inbox, `${meta.session_id}.jsonl`);
     const body = existsSync(jsonl) ? condense(readFileSync(jsonl, 'utf8'), meta.offset) : '';
     const host = meta.host ? `host: ${meta.host}\n` : '';
+    say(`condensed session ${meta.session_id.slice(0, 8)} (${meta.scope}, ${plural(body ? body.split('\n').length : 0, 'line')})`);
     writeFile(join(sessions, `${meta.session_id}.md`), `# Session ${meta.session_id}\nuser: ${meta.user ?? 'unknown'}\nrepo: ${meta.repo}\nscope: ${meta.scope}\ncwd: ${meta.cwd}\n${host}\n${body}\n`);
   }
 
   git(dir, 'worktree', 'add', '-q', '-b', branch, tree, 'main');
   try {
     if (metas.length || missed.length) {
+      const before = openChanges(tree);
       claude(tree, fill(PROPOSE, vars), 'Read,Write,Edit,Glob,Grep', work);
       commit(tree, 'dream: pass 1 propose');
+      const added = openChanges(tree).filter((id) => !before.includes(id));
+      say(`propose wrote ${plural(added.length, 'change')}${added.map((id) => `\n  + changes/${id}`).join('')}`);
       withLock(dir, 'commit', () => merge(dir, branch, `dream ${ts}: proposals`));
       mkdirSync(join(inbox, 'processed'), { recursive: true });
       for (const m of metas) {
@@ -213,6 +228,9 @@ function run(dir: string): DreamResult {
       claude(tree, fill(CONVERGE, vars), 'Read,Write,Edit,Glob,Grep', sessions);
       removeEmptySpecs(tree);
       const decided = existsSync(join(tree, report)) && applyDecisions(tree, readFileSync(join(tree, report), 'utf8'), ts);
+      if (decided) {
+        for (const l of readFileSync(join(tree, report), 'utf8').split('\n').filter((l) => /^- (ACCEPT|REJECT|PENDING) changes\//.test(l))) say(`converge ${short(l)}`);
+      } else say(`converge wrote no decisions to ${report}`);
       for (const id of rejected.keys()) renameSync(join(parked, id), join(tree, 'changes', id));
       commit(tree, 'dream: pass 2 converge');
 
@@ -227,10 +245,15 @@ function run(dir: string): DreamResult {
         out = claude(tree, fill(VERIFY, vars), 'Read,Glob,Grep', work).replace(/[*`]/g, '');
         verdict = out.trim().split('\n').filter(Boolean).at(-1)?.trim() ?? 'REJECT: verify produced no output';
       }
+      say(`verify (attempt ${attempt + 1}/${MAX_ATTEMPTS}): ${short(verdict)}`);
       if (verdict === 'APPROVE') break;
 
       const named = [...out.matchAll(/^\s*- REJECT changes\/([^\s/:]+):\s*(.*)$/gm)].filter(([, id]) => open.includes(id) && !rejected.has(id));
-      for (const [, id, reason] of named) rejected.set(id, `REJECT: ${reason.trim()}`);
+      for (const [, id, reason] of named) {
+        rejected.set(id, `REJECT: ${reason.trim()}`);
+        say(`verify parked changes/${id}: ${short(reason.trim())}`);
+      }
+      if (named.length && attempt + 1 < MAX_ATTEMPTS) say('re-running converge without parked changes');
       if (!named.length) {
         for (const id of open) if (!rejected.has(id)) rejected.set(id, verdict);
         break;
@@ -244,7 +267,11 @@ function run(dir: string): DreamResult {
       bumpRuns(dir);
     });
     for (const [id, reason] of rejected) appendFileSync(join(dir, 'dream.log'), `${ts} changes/${id} ${reason}\n`);
-    if (approved) return { status: 'merged' };
+    if (approved) {
+      say(`merged dream/${ts} into main${rejected.size ? `, ${plural(rejected.size, 'change')} parked` : ''}`);
+      return { status: 'merged' };
+    }
+    say(`run rejected, nothing merged: ${short(verdict)}`);
     appendFileSync(join(dir, 'dream.log'), `${ts} ${verdict}\n`);
     return { status: 'rejected', reason: verdict };
   } finally {

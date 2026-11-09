@@ -103,6 +103,8 @@ npm run dream
 4. `checkTopics` (mechanical), then **Verify**: an independent agent reviews the diff against the evidence. `APPROVE` merges into `main`. `REJECT` logs to `dream.log`, and the changes stay pending.
 5. Every still-open change gets `runs += 1`. Changes reach 3 runs and expire.
 
+Progress goes to stderr as `[dream]` lines: inbox/miss/open-change counts, each condensed session, changes the propose pass wrote, every converge decision with its reason, each verify verdict (attempt n/3) and parked change, runs bumped/expired, and the final merged/rejected outcome. stdout prints only the final status.
+
 ### Remote devboxes
 
 `npm run pull` copies new transcripts from your SSH devboxes into `inbox/`, where the next dream picks them up. List the hosts in `~/.agent-memory/remotes.json`:
@@ -127,11 +129,11 @@ Undo a bad dream: `git -C ~/.agent-memory revert -m 1 <merge-commit>`.
 npm run stats
 ```
 
-Reads `usage.jsonl` (written by the CLI and the `SessionStart` hook) plus `changes/`, and prints markdown:
-- **Adoption**: sessions, sessions with at least one tool call, calls and errors per tool.
-- **Search**: zero-hit rate, average hits, top zero-hit patterns (memory gaps).
-- **Per-memory**: search hits per requirement, views per spec, never-retrieved requirements.
-- **Proposals**: open / accepted / rejected / expired per source (session, dream).
+Reads `usage.jsonl` (written by the CLI and the `SessionStart` hook) plus `changes/`. The default report is compact; `npm run stats -- --verbose` adds per-tool and per-spec tables, zero-hit bars, purposes, the proposal matrix and the full initial message. Sections:
+- **Usage**: sessions, sessions with at least one tool call, calls, errors, zero-hit rate, average hits, top zero-hit patterns (memory gaps).
+- **Memories**: per topic requirements, search hits, views (disputed/flagged columns only when non-zero), requirements flagged for cleanup.
+- **Proposals**: open / accepted / rejected / expired totals (per source in `--verbose`), open changes listed.
+- **Dreams** and **initial message** size.
 
 Stores created before this feature: add `usage.jsonl` to `~/.agent-memory/.gitignore`, otherwise the log gets committed.
 

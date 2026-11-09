@@ -43,21 +43,21 @@ function fixture() {
 
 describe('stats', () => {
   it('should report adoption: unique sessions, active sessions, calls per tool', () => {
-    const out = stats(fixture());
+    const out = stats(fixture(), undefined, true);
 
     assert.match(out, /sessions 3 {3}active 2 \(67%\) {3}avg calls\/active 3\.0/);
     assert.match(out, /search\s+4\s+0\s+█+\n\s+view\s+2\s+1\s+█+\n/);
   });
 
   it('should report zero-hit rate and top zero-hit patterns', () => {
-    const out = stats(fixture());
+    const out = stats(fixture(), undefined, true);
 
     assert.match(out, /searches 4 {3}zero-hit 2 \(50%\) {3}avg hits 0\.8/);
     assert.match(out, /deploy\|ship\s+2\s+█+\n/);
   });
 
   it('should list every topic with requirement, disputed, hit and view counts', () => {
-    const out = stats(fixture());
+    const out = stats(fixture(), undefined, true);
 
     assert.match(out, /org \/ git\s+2\s+0\s+0\s+2\s+0\s+Git\n/);
     assert.match(out, /repos\/github\.com\/acme\/app \/ testing\s+1\s+0\s+0\s+1\s+1\s+Tests\n/);
@@ -74,40 +74,62 @@ describe('stats', () => {
       'usage.jsonl': days.map((e) => JSON.stringify(e)).join('\n') + '\n',
     });
 
-    const out = stats(store);
+    const out = stats(store, undefined, true);
     assert.match(out, /org \/ git\s+1\s+0\s+1\s+0\s+0\s+Git\n/);
     assert.match(out, /flagged for cleanup \(1\/2\)\n {2}org \/ git \/ Squash {2}idle 30\/60\n\n/);
   });
 
   it('should report proposal funnel per source from changes and archive', () => {
-    const out = stats(fixture());
+    const out = stats(fixture(), undefined, true);
 
     assert.match(out, /dream\s+0\s+0\s+1\s+0\n\s+session\s+1\s+1\s+0\s+1\n/);
   });
 
   it('should list open proposals with scope, topic, source and runs', () => {
-    const out = stats(fixture());
+    const out = stats(fixture(), undefined, true);
 
     assert.match(out, /c1\s+org \/ git\s+session\s+0\n/);
   });
 
   it('should report dream runs, last report decisions and inbox backlog', () => {
-    const out = stats(fixture());
+    const out = stats(fixture(), undefined, true);
 
     assert.match(out, /runs 2 {3}last 2026-10-15T00-00-00-000Z {3}accepted 1 {3}rejected 1 {3}pending 1\n {2}inbox 1 waiting {3}2 processed/);
   });
 
   it('should show the initial session message for the cwd scopes', () => {
-    const out = stats(fixture(), tmp());
+    const out = stats(fixture(), tmp(), true);
 
     assert.match(out, /INITIAL MESSAGE\n {2}scopes org {3}\d+ chars {3}~\d+ tokens\n\n {2}# Shared agent memory\n/);
     assert.match(out, /\n {2}## org\n {2}- git — Git rules\n/);
   });
 
   it('should print "none" for empty memory sections', () => {
-    const out = stats(makeStore({ 'usage.jsonl': log({ session: 's1', event: 'session', source: 'startup' }) }));
+    const out = stats(makeStore({ 'usage.jsonl': log({ session: 's1', event: 'session', source: 'startup' }) }), undefined, true);
 
     assert.match(out, /MEMORIES\n {2}none\n\n {2}none\n\n {2}flagged for cleanup \(0\/0\)\n {2}none\n/);
+  });
+
+  it('should print a compact report by default', () => {
+    const out = stats(fixture(), tmp());
+
+    assert.match(out, /USAGE\n {2}sessions 3 {3}active 2 \(67%\) {3}calls 6 {3}errors 1\n {2}searches 4 {3}zero-hit 2 \(50%\) {3}avg hits 0\.8\n {2}zero-hit patterns deploy\|ship ×2\n/);
+    assert.match(out, /topic\s+reqs\s+hits\s+views\n\s+org \/ git\s+2\s+2\s+0\n/);
+    assert.match(out, /PROPOSALS\n {2}open 1 {3}accepted 1 {3}rejected 1 {3}expired 1\n/);
+    assert.match(out, /c1\s+org \/ git\s+session\s+0\n/);
+    assert.match(out, /INITIAL MESSAGE\n {2}scopes org {3}\d+ chars {3}~\d+ tokens\n$/);
+    assert.doesNotMatch(out, /█|Shared agent memory|disputed|flagged/);
+  });
+
+  it('should show disputed and flagged columns in the compact report only when non-zero', () => {
+    const days = Array.from({ length: 30 }, (_, i) => ({ ts: new Date(Date.UTC(2099, 0, 1 + i)).toISOString(), session: `d${i}`, event: 'session', scopes: ['org'] }));
+    const store = makeStore({
+      'org/_topics.md': topics(['git', 'Git', 'Covers git']),
+      'org/git.md': spec('git', 'Git rules', ['Squash', 'PRs SHOULD squash.']),
+      'usage.jsonl': days.map((e) => JSON.stringify(e)).join('\n') + '\n',
+    });
+
+    assert.match(stats(store), /topic\s+reqs\s+flagged\s+hits\s+views\n\s+org \/ git\s+1\s+1\s+0\s+0\n[\s\S]*flagged for cleanup \(1\/1\)/);
   });
 
   it('should print "no usage yet" without log', () => {

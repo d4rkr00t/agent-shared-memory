@@ -82,7 +82,7 @@ function dreams(dir: string): string {
   inbox ${ls('inbox', '.json').length} waiting   ${ls('inbox/processed', '.json').length} processed`;
 }
 
-export function stats(dir = storeDir(), cwd = process.cwd()): string {
+export function stats(dir = storeDir(), cwd = process.cwd(), verbose = false): string {
   if (!existsSync(usageLog(dir))) return 'no usage yet';
   const events: Event[] = readFileSync(usageLog(dir), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
   const calls = events.filter((e) => e.event !== 'session');
@@ -109,19 +109,57 @@ export function stats(dir = storeDir(), cwd = process.cwd()): string {
   const { scopes } = resolveScope(cwd);
   const message = startMessage(dir, scopes);
 
+  const rows = topics.filter((t) => verbose || t[1]);
+  const extra = (i: number) => verbose || rows.some((r) => r[i]);
+  const keep = [0, 1, 2, 3, 4, 5].filter((i) => i < 2 || i > 3 || extra(i)).concat(verbose ? [6] : []);
+  const pick = (r: Cell[]) => keep.map((i) => r[i]);
+  const heads = ['topic', 'reqs', 'disputed', 'flagged', 'hits', 'views', 'purpose'];
+  const memories = `${section('🧠', 'MEMORIES')}
+${table(keep.map((i) => heads[i]), rows.map(pick))}
+${rows.length ? `  ${styleText('dim', 'hits = times returned by search, views = times the spec was opened')}\n` : ''}`;
+  const flaggedList = flagged.length
+    ? `
+  ${styleText('dim', `flagged for cleanup (${flagged.length}/${reqs.length})`)}
+${flagged.map((r) => `  ${key(r)}  idle ${r.idle}/${REMOVE_DAYS}`).join('\n')}
+`
+    : '';
+  const messageLine = `  scopes ${scopes.join(', ')}   ${message.length} chars   ~${Math.round(message.length / 4)} tokens`;
+  const zeroRate = rate(zero.length, searches.length, (p) => (p <= 20 ? 'green' : p <= 50 ? 'yellow' : 'red'));
+  const activeRate = rate(active, sessions, (p) => (p >= 50 ? 'green' : p >= 20 ? 'yellow' : 'red'));
+
+  if (!verbose) {
+    const p = proposals(dir);
+    const total = (i: number) => p.reduce((n, r) => n + +r[i], 0);
+    const errors = calls.filter((e) => e.error).length;
+    const open = openProposals(dir);
+    return `${section('📈', 'USAGE')}
+  sessions ${sessions}   active ${active} (${activeRate})   calls ${calls.length}   errors ${errors}
+  searches ${searches.length}   zero-hit ${zero.length} (${zeroRate})   avg hits ${avg(totalHits, searches.length)}
+  ${styleText('dim', 'zero-hit patterns')} ${[...counts(zero.map((e) => e.pattern!))].slice(0, 5).map(([k, n]) => (n > 1 ? `${k} ×${n}` : k)).join('   ') || 'none'}
+
+${memories}${flaggedList}
+${section('📝', 'PROPOSALS')}
+  open ${total(1)}   accepted ${total(2)}   rejected ${total(3)}   expired ${total(4)}
+${open.length ? `\n${table(['open change', 'scope / topic', 'source', 'runs'], open)}\n` : ''}
+${section('🌙', 'DREAMS')}
+${dreams(dir)}
+
+${section('💬', 'INITIAL MESSAGE')}
+${messageLine}
+`;
+  }
+
   return `${section('📈', 'ADOPTION')}
-  sessions ${sessions}   active ${active} (${rate(active, sessions, (p) => (p >= 50 ? 'green' : p >= 20 ? 'yellow' : 'red'))})   avg calls/active ${avg(calls.length, active)}
+  sessions ${sessions}   active ${active} (${activeRate})   avg calls/active ${avg(calls.length, active)}
 
 ${table(['tool', 'calls', 'errors'], tools.map((t) => [t, calls.filter((e) => e.event === t).length, calls.filter((e) => e.event === t && e.error).length]), 1)}
 
 ${section('🔍', 'SEARCH')}
-  searches ${searches.length}   zero-hit ${zero.length} (${rate(zero.length, searches.length, (p) => (p <= 20 ? 'green' : p <= 50 ? 'yellow' : 'red'))})   avg hits ${avg(totalHits, searches.length)}
+  searches ${searches.length}   zero-hit ${zero.length} (${zeroRate})   avg hits ${avg(totalHits, searches.length)}
 
 ${table(['zero-hit pattern', 'count'], [...counts(zero.map((e) => e.pattern!))].slice(0, 10), 1)}
 
-${section('🧠', 'MEMORIES')}
-${table(['topic', 'reqs', 'disputed', 'flagged', 'hits', 'views', 'purpose'], topics)}
-
+${memories}
 ${table(['spec', 'views'], [...views], 1)}
 
   ${styleText('dim', `flagged for cleanup (${flagged.length}/${reqs.length})`)}
@@ -136,10 +174,10 @@ ${section('🌙', 'DREAMS')}
 ${dreams(dir)}
 
 ${section('💬', 'INITIAL MESSAGE')}
-  scopes ${scopes.join(', ')}   ${message.length} chars   ~${Math.round(message.length / 4)} tokens
+${messageLine}
 
 ${message.replace(/^/gm, '  ')}
 `;
 }
 
-if (import.meta.main) console.log(stats());
+if (import.meta.main) console.log(stats(undefined, undefined, process.argv.includes('--verbose')));

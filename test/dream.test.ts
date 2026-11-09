@@ -190,6 +190,31 @@ console.log(t.includes('Bad') ? '- **REJECT changes/c-2: ungrounded**\\nREJECT: 
     assert.equal(git(store, 'status', '--porcelain'), '');
   });
 
+  it('should log what each step did: decisions, verdicts, parked changes and merge', (t) => {
+    const store = makeStore({ 'changes/c-1/proposal.md': PROPOSAL(), 'changes/c-2/proposal.md': PROPOSAL() });
+    fakeClaude({
+      converge: `const ids = fs.readdirSync(path.join(cwd, 'changes')).filter((d) => d.startsWith('c-'));
+write('${APP}/_topics.md', ${JSON.stringify(topics(['testing', 'Tests', 'Covers tests, not CI']))});
+write('${APP}/testing.md', ${JSON.stringify(spec('testing', 'Tests', ['Runner', 'Tests SHALL run with npm test.\nEvidence: s0']))} + (ids.includes('c-2') ? '\\n### Requirement: Bad\\nBad.\\n' : ''));
+write(report, ids.map((id) => '- ACCEPT changes/' + id + ' -> ${APP}\\n').join(''));`,
+      verify: `const t = fs.readFileSync(path.join(cwd, '${APP}/testing.md'), 'utf8');
+console.log(t.includes('Bad') ? '- REJECT changes/c-2: ungrounded\\nREJECT: c-2 ungrounded' : 'APPROVE');`,
+    });
+    const lines: string[] = [];
+    t.mock.method(console, 'error', (m: string) => lines.push(m));
+
+    dream(store);
+
+    const log = lines.join('\n');
+    assert.match(log, /0 sessions in inbox, 0 zero-hit searches, 2 open changes/);
+    assert.match(log, /converge - ACCEPT changes\/c-1/);
+    assert.match(log, /verify \(attempt 1\/3\): REJECT: c-2 ungrounded/);
+    assert.match(log, /verify parked changes\/c-2: ungrounded/);
+    assert.match(log, /verify \(attempt 2\/3\): APPROVE/);
+    assert.match(log, /merged dream\/\S+ into main, 1 change parked/);
+    assert.match(log, /still open changes\/c-2 \(run 1\/3\)/);
+  });
+
   it('should reject run without calling verify when spec file has no registry entry', () => {
     const store = makeStore({ 'changes/c-1/proposal.md': PROPOSAL() });
     const bin = fakeClaude({
